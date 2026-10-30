@@ -642,6 +642,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun shortPress() {
         if (timer.isRunning) return
+        // A light tap during inspection must not restart its clock. Starting the
+        // solve still requires the normal hold-to-ready gesture.
+        if (timer.isInspecting) return
         if (!inspectionEnabled.value) {
             startFromHold()
             return
@@ -677,15 +680,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             error.value = "Your session is still loading. Try again in a moment."
             return
         }
-        if (activeSessionType == "timerOnly") {
-            viewModelScope.launch(Dispatchers.IO) { activeRunMutex.withLock { dao.clearActiveTimer() } }
-            activePenalty = Penalty.NONE
-            phaseSplitsNanos.value = emptyList()
-            return
-        }
         val inspectedNanos = timer.inspectionElapsedNanos()
         activePenalty = when {
-            inspectedNanos >= 17_000_000_000L -> Penalty.DNF
+            inspectedNanos > 17_000_000_000L -> Penalty.DNF
             inspectedNanos >= 15_000_000_000L -> Penalty.PLUS_TWO
             else -> Penalty.NONE
         }
@@ -702,7 +699,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         elapsedNanos.value = 0L
         error.value = null
         recoveryWarning = null
-        queueActiveRunSave()
+        if (!timerOnly) queueActiveRunSave()
     }
 
     fun stopAtTouch() {
@@ -716,6 +713,13 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         val duration = timer.stop() ?: return
+        if (activeSessionType == "timerOnly") {
+            isRunning.value = false
+            elapsedNanos.value = duration
+            activePenalty = Penalty.NONE
+            phaseSplitsNanos.value = emptyList()
+            return
+        }
         val priorBest = solves.value.asSequence()
             .filter { it.sessionId == activeSessionId && it.penalty != Penalty.DNF.ordinal }
             .map { it.timeMillis + if (it.penalty == Penalty.PLUS_TWO.ordinal) 2_000L else 0L }

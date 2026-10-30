@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.2 — 2026-10-30
+
+- Fixed inspection restarts caused by quick taps; taps during inspection now leave the monotonic inspection clock alone.
+- Corrected inspection penalty boundaries: +2 from 15 seconds through exactly 17 seconds, DNF only after 17 seconds.
+- Kept the inspection countdown at 0 while the +2 window is active instead of switching to a dash.
+- Fixed Timer Only sessions to run without saving solve records.
+- Updated Android version code to 12 and version name to 1.0.2.
+
 ## 1.0.1 — 2026-10-30
 
 - Kept the display awake while Trampis Timed is visible so the screen does not lock during solves.
