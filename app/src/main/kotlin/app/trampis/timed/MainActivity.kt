@@ -306,6 +306,7 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
     val preparing by vm.isPreparing.collectAsState()
     val inspectionEnabled by vm.inspectionEnabled.collectAsState()
     val inspectionCountdown by vm.inspectionCountdownEnabled.collectAsState()
+    val inspectionCountdownActive by vm.inspectionCountdownActive.collectAsState()
     val holdTime by vm.holdTimeMillis.collectAsState()
     val haptics by vm.hapticsEnabled.collectAsState()
     val inspectionAlerts by vm.inspectionAlertsEnabled.collectAsState()
@@ -401,7 +402,7 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
               else fadeIn(androidx.compose.animation.core.tween(125, delayMillis = 55)) togetherWith fadeOut(androidx.compose.animation.core.tween(55)) using null
           }, label = "cube-page") { visiblePage ->
             when (visiblePage) {
-                "Timer" -> TimerPage(vm, selected, solves, scramble, scrambleSvg, scrambleLocked, running, inspecting, preparing, elapsed, inspectionElapsed, inspectionCountdown, phaseSplits, holdTime, haptics, timerStats, scrambleDrawing, decimalPlaces, boldTimerDigits, timerFontWeight, timerSizeScale, scrambleTextSize, timerFontPreset, error) { showSessions = true }
+                "Timer" -> TimerPage(vm, selected, solves, scramble, scrambleSvg, scrambleLocked, running, inspecting, preparing, elapsed, inspectionElapsed, inspectionCountdownActive, phaseSplits, holdTime, haptics, timerStats, scrambleDrawing, decimalPlaces, boldTimerDigits, timerFontWeight, timerSizeScale, scrambleTextSize, timerFontPreset, error) { showSessions = true }
                 "Solves" -> Column(Modifier.fillMaxSize()) { PageHeading("Times"); SolvesPage(solves, allSolves, sessions, selected?.id, vm, offerUndo) }
                 "Stats" -> StatsPage(solves, selected, gradientStyle, customGradientStart, customGradientEnd, graphGlow, graphAnimation, statsCardMotion, vm) { showSessions = true }
                 "Sessions" -> Column(Modifier.fillMaxSize()) {
@@ -748,10 +749,20 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
                         (fadeOut(androidx.compose.animation.core.tween(140)) + androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(180)) { -it / 8 })
                 }, label = "scramble-transition") { displayedScramble ->
                     Column(Modifier.fillMaxWidth().padding(horizontal = 3.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = .76f), RoundedCornerShape(20.dp))
-                        .combinedClickable(onClick = { showScramble = true }, onLongClick = { showScrambleMenu = true }).padding(horizontal = 16.dp, vertical = 13.dp)) {
+                        .combinedClickable(
+                            onClick = { showScramble = true },
+                            onLongClick = { showScrambleMenu = true },
+                            onDoubleClick = {
+                                if (scrambleLocked) showScrambleMenu = true
+                                else {
+                                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    vm.nextScramble(playCue = true)
+                                }
+                            },
+                        ).padding(horizontal = 16.dp, vertical = 13.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("SCRAMBLE", style = MaterialTheme.typography.labelSmall, letterSpacing = 1.7.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Text("TAP TO EXPAND", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .8f))
+                            Text(if (scrambleLocked) "TAP TO EXPAND · LOCKED" else "TAP TO EXPAND · DOUBLE TAP NEXT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .8f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
                         Spacer(Modifier.height(7.dp))
                         Text(displayedScramble, fontFamily = FontFamily(Font(R.font.recursive)), fontSize = scrambleTextSize.sp, lineHeight = (scrambleTextSize * 1.32f).sp, maxLines = 5)

@@ -105,6 +105,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     val isPreparing = MutableStateFlow(false)
     val inspectionEnabled = MutableStateFlow(false)
     val inspectionCountdownEnabled = MutableStateFlow(false)
+    val inspectionCountdownActive = MutableStateFlow(false)
     val holdTimeMillis = MutableStateFlow(500L)
     val hapticsEnabled = MutableStateFlow(true)
     val inspectionAlertsEnabled = MutableStateFlow(true)
@@ -147,6 +148,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     private var activePhaseCount = 2
     private var lastInspectionAlertSecond = 0L
     private var inspectionAutoStartsSolve = false
+    private var scrambleRequestSequence = 0L
     private var recoveryWarning: String? = null
 
     init {
@@ -450,6 +452,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     fun resetTimer() {
         timer.reset()
         inspectionAutoStartsSolve = false
+        inspectionCountdownActive.value = false
         isRunning.value = false
         isInspecting.value = false
         isPreparing.value = false
@@ -462,6 +465,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun nextScramble(sessionOverride: SessionEntity? = null, playCue: Boolean = false) {
+        val requestId = ++scrambleRequestSequence
         val session = sessionOverride ?: sessions.value.firstOrNull { it.id == currentSessionId.value }
         if (session?.sessionType == "timerOnly") {
             scramble.value = ""
@@ -474,11 +478,13 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 scramble.value = "Generating scramble…"
                 val output = withContext(Dispatchers.IO) { scrambleProvider.nextWithDrawing(eventId) }
+                if (requestId != scrambleRequestSequence) return@launch
                 scramble.value = output.notation
                 scrambleSvg.value = output.drawingSvg
                 error.value = recoveryWarning
                 if (playCue && solveSoundsEnabled.value) playTimerSound(R.raw.scramble_refresh)
             } catch (e: Exception) {
+                if (requestId != scrambleRequestSequence) return@launch
                 scrambleSvg.value = null
                 error.value = "TNoodle could not generate a scramble: ${e.message ?: "unknown error"}"
             }
@@ -493,15 +499,18 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setPlaygroundEvent(eventId: String) {
         val session = selectedSession.value ?: return
+        val requestId = ++scrambleRequestSequence
         val puzzleId = CubeEvents.fromId(eventId).id
         viewModelScope.launch {
             withContext(Dispatchers.IO) { dao.setEvent(session.id, puzzleId) }
             try {
                 val output = withContext(Dispatchers.IO) { scrambleProvider.nextWithDrawing(puzzleId) }
+                if (requestId != scrambleRequestSequence) return@launch
                 scramble.value = output.notation
                 scrambleSvg.value = output.drawingSvg
                 error.value = null
             } catch (e: Exception) {
+                if (requestId != scrambleRequestSequence) return@launch
                 scrambleSvg.value = null
                 error.value = "TNoodle could not generate a scramble: ${e.message ?: "unknown error"}"
             }
@@ -660,6 +669,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         timer.startInspection()
         activePenalty = Penalty.NONE
         inspectionAutoStartsSolve = inspectionCountdownEnabled.value
+        inspectionCountdownActive.value = inspectionAutoStartsSolve
         lastInspectionAlertSecond = 0L
         isInspecting.value = true
         inspectionNanos.value = 0L
@@ -702,6 +712,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         val exactHandoffNanos = if (automaticCountdownHandoff && inspectionStart != null) inspectionStart + InspectionRules.COUNTDOWN_NANOS else null
         if (exactHandoffNanos != null) timer.startAt(exactHandoffNanos) else timer.start()
         inspectionAutoStartsSolve = false
+        inspectionCountdownActive.value = false
         if (solveSoundsEnabled.value) playTimerSound(R.raw.solve_start)
         activeSessionId = session
         activeSessionType = sessionEntity?.sessionType ?: "standard"
@@ -801,6 +812,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     fun cancelInspection() {
         timer.reset()
         inspectionAutoStartsSolve = false
+        inspectionCountdownActive.value = false
         isInspecting.value = false
         inspectionNanos.value = 0L
         isPreparing.value = false

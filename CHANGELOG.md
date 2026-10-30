@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.4 — 2026-10-30
+
+- Added double-tap on the scramble card to skip to the next scramble, respecting scramble lock and using existing haptic/sound feedback.
+- Preserved full 64-bit epoch timestamps in csTimer exports to prevent future date overflow.
+- Latched countdown mode for each inspection so changing Settings mid-inspection cannot desync the display and its automatic handoff.
+- Prevented stale concurrent scramble generations from replacing the latest scramble after refreshes or puzzle changes.
+- Updated Android version code to 14 and version name to 1.0.4.
+
 ## 1.0.3 — 2026-10-30
 
 - In countdown inspection mode, automatically starts the solve timer when the 15-second countdown reaches zero; the solve then counts up normally.
