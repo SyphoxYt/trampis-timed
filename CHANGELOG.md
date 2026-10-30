@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1 — 2026-10-30
+
+- Kept the display awake while Trampis Timed is visible so the screen does not lock during solves.
+- Added original sound cues for solve starts/stops, new personal bests, session creation, and manual scramble refresh, with one persistent on/off setting.
+- Replaced the page slide transition with a sequential fade and disabled page-size interpolation to prevent the Stats switch from clipping and overlapping.
+- Updated Android version code to 11 and version name to 1.0.1.
+
 ## 1.0.0 — 2026-10-30
 
 - Added accessibility settings for reduced motion, high contrast, and system/Rubik interface fonts.

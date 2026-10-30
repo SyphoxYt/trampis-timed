@@ -45,6 +45,7 @@ private val InspectionCountdownKey = booleanPreferencesKey("inspection_countdown
 private val HoldTimeKey = floatPreferencesKey("hold_time_seconds")
 private val HapticsKey = booleanPreferencesKey("haptics_enabled")
 private val InspectionAlertsKey = booleanPreferencesKey("inspection_alerts_enabled")
+private val SolveSoundsKey = booleanPreferencesKey("solve_sounds_enabled")
 private val TimerStatsKey = booleanPreferencesKey("timer_stats_enabled")
 private val ScrambleDrawingKey = booleanPreferencesKey("scramble_drawing_enabled")
 private val DisplayDpKey = androidx.datastore.preferences.core.intPreferencesKey("display_decimal_places")
@@ -106,6 +107,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     val holdTimeMillis = MutableStateFlow(500L)
     val hapticsEnabled = MutableStateFlow(true)
     val inspectionAlertsEnabled = MutableStateFlow(true)
+    val solveSoundsEnabled = MutableStateFlow(true)
     val timerStatsEnabled = MutableStateFlow(true)
     val scrambleDrawingEnabled = MutableStateFlow(true)
     val displayDecimalPlaces = MutableStateFlow(3)
@@ -153,6 +155,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                 holdTimeMillis.value = ((prefs[HoldTimeKey] ?: 0.5f) * 1000).toLong()
                 hapticsEnabled.value = prefs[HapticsKey] ?: true
                 inspectionAlertsEnabled.value = prefs[InspectionAlertsKey] ?: true
+                solveSoundsEnabled.value = prefs[SolveSoundsKey] ?: true
                 timerStatsEnabled.value = prefs[TimerStatsKey] ?: true
                 scrambleDrawingEnabled.value = prefs[ScrambleDrawingKey] ?: true
                 displayDecimalPlaces.value = prefs[DisplayDpKey] ?: 3
@@ -381,6 +384,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             }
             currentSessionId.value = id
             persistSelectedSession(id)
+            if (solveSoundsEnabled.value) playTimerSound(R.raw.session_created)
             nextScramble(SessionEntity(id = id, name = cleanName, eventId = CubeEvents.fromId(eventId).id, sessionType = sessionType, phaseCount = phaseCount, targetMillis = targetMillis))
         }
     }
@@ -449,7 +453,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun nextScramble(sessionOverride: SessionEntity? = null) {
+    fun nextScramble(sessionOverride: SessionEntity? = null, playCue: Boolean = false) {
         val session = sessionOverride ?: sessions.value.firstOrNull { it.id == currentSessionId.value }
         if (session?.sessionType == "timerOnly") {
             scramble.value = ""
@@ -465,6 +469,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                 scramble.value = output.notation
                 scrambleSvg.value = output.drawingSvg
                 error.value = recoveryWarning
+                if (playCue && solveSoundsEnabled.value) playTimerSound(R.raw.scramble_refresh)
             } catch (e: Exception) {
                 scrambleSvg.value = null
                 error.value = "TNoodle could not generate a scramble: ${e.message ?: "unknown error"}"
@@ -542,6 +547,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     fun setInspectionCountdownEnabled(enabled: Boolean) = updatePreference(InspectionCountdownKey, enabled)
     fun setHapticsEnabled(enabled: Boolean) = updatePreference(HapticsKey, enabled)
     fun setInspectionAlertsEnabled(enabled: Boolean) = updatePreference(InspectionAlertsKey, enabled)
+    fun setSolveSoundsEnabled(enabled: Boolean) = updatePreference(SolveSoundsKey, enabled)
     fun setTimerStatsEnabled(enabled: Boolean) = updatePreference(TimerStatsKey, enabled)
     fun setScrambleDrawingEnabled(enabled: Boolean) = updatePreference(ScrambleDrawingKey, enabled)
     fun setHoldTimeSeconds(seconds: Float) {
@@ -684,6 +690,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             else -> Penalty.NONE
         }
         timer.start()
+        if (solveSoundsEnabled.value) playTimerSound(R.raw.solve_start)
         activeSessionId = session
         activeSessionType = sessionEntity?.sessionType ?: "standard"
         activePhaseCount = sessionEntity?.phaseCount?.coerceIn(2, 8) ?: 2
@@ -709,6 +716,13 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         val duration = timer.stop() ?: return
+        val priorBest = solves.value.asSequence()
+            .filter { it.sessionId == activeSessionId && it.penalty != Penalty.DNF.ordinal }
+            .map { it.timeMillis + if (it.penalty == Penalty.PLUS_TWO.ordinal) 2_000L else 0L }
+            .minOrNull()
+        val finalMillis = duration / 1_000_000L + if (activePenalty == Penalty.PLUS_TWO) 2_000L else 0L
+        val isNewBest = activePenalty != Penalty.DNF && (priorBest == null || finalMillis < priorBest)
+        if (solveSoundsEnabled.value) playTimerSound(if (isNewBest) R.raw.solve_record else R.raw.solve_end)
         isRunning.value = false
         elapsedNanos.value = duration
         val session = activeSessionId
@@ -732,6 +746,15 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             activePenalty = Penalty.NONE
             phaseSplitsNanos.value = emptyList()
             if (!isScrambleLocked.value) nextScramble()
+        }
+    }
+
+    private fun playTimerSound(resourceId: Int) {
+        runCatching {
+            MediaPlayer.create(getApplication<Application>(), resourceId)?.apply {
+                setOnCompletionListener { it.release() }
+                start()
+            }
         }
     }
 
