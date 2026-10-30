@@ -783,8 +783,6 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
         }
         val timerColor = when {
             running -> MaterialTheme.colorScheme.onBackground
-            inspecting && !inspectionCountdown && inspectionElapsed >= InspectionRules.DNF_NANOS -> Color(0xFFE34F53)
-            inspecting && !inspectionCountdown && inspectionElapsed >= InspectionRules.PLUS_TWO_NANOS -> Color(0xFFF28D36)
             preparing -> Color(0xFF49A867)
             else -> MaterialTheme.colorScheme.onBackground
         }
@@ -886,9 +884,6 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
             }
             Row(Modifier.graphicsLayer { scaleX = timerScale; scaleY = timerScale }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 Text(timeText, fontFamily = if (timerFontPreset == "system") FontFamily.Default else recursiveFontFamily(if (boldTimerDigits) timerFontWeight else 500), fontSize = timerSize, fontWeight = FontWeight.Normal, color = animatedTimerColor, maxLines = 1, softWrap = false)
-                if (inspecting && !inspectionCountdown && inspectionElapsed >= InspectionRules.PLUS_TWO_NANOS) {
-                    Text(if (inspectionElapsed >= InspectionRules.DNF_NANOS) " [DNF]" else " [+2]", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = timerColor)
-                }
             }
         }
         if (session?.sessionType == "multiphase" && running) Text("PHASE ${phaseSplits.size + 1} / ${session.phaseCount}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
@@ -1828,8 +1823,8 @@ private fun MorePage(inspectionEnabled: Boolean, inspectionCountdown: Boolean, h
         SettingGroup("Timer Settings") {
             SettingSwitch("Use Inspection", "Enable the WCA 15 second inspection period.", inspectionEnabled, vm::setInspectionEnabled)
             if (inspectionEnabled) {
-                SettingSwitch("Inspection Counts Down", "Count down from 15 seconds, then start the solve timer automatically.", inspectionCountdown, vm::setInspectionCountdownEnabled)
-                SettingSwitch("Inspection Alerts", "Play CubeTime's audio cues at 8 and 12 seconds.", inspectionAlerts, vm::setInspectionAlertsEnabled)
+                SettingSwitch("Inspection Counts Down", "Choose remaining or elapsed seconds; the solve starts automatically at 15 seconds either way.", inspectionCountdown, vm::setInspectionCountdownEnabled)
+                SettingSwitch("Inspection Alerts", "Play spoken cues at 8 and 12 seconds in the selected count direction.", inspectionAlerts, vm::setInspectionAlertsEnabled)
             }
             SettingSwitch("Solve Sounds", "Play short cues for solves, new bests, sessions, and scramble refreshes.", solveSounds, vm::setSolveSoundsEnabled)
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {

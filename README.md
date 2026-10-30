@@ -2,6 +2,10 @@
 
 Trampis Timed is the Android continuation of CubeTime, ported from the original project to Kotlin and Jetpack Compose.
 
+## Version 1.0.5
+
+Both inspection display modes now start the solve timer at 15 seconds. A tap during inspection starts the solve immediately. The display preference only chooses whether inspection shows remaining or elapsed seconds; spoken 8/12-second cues follow that display, and inspection time no longer applies +2 or DNF automatically.
+
 ## Version 1.0.4
 
 Double-tap the scramble card to generate the next scramble, with the same lock protection, haptic feedback, and optional sound cue as the refresh button. Countdown mode is latched per inspection so changing its setting mid-count cannot desync the display from the automatic handoff. This release also includes the inspection countdown to solve count-up handoff from 1.0.3 and preserves full 64-bit timestamps in csTimer exports.

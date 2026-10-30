@@ -3,12 +3,10 @@ package app.trampis.timed.domain
 /** The timer reads a monotonic clock; display refreshes never determine recorded time. */
 enum class TimerMode { IDLE, INSPECTING, RUNNING, STOPPED }
 
-/** Shared inspection thresholds keep countdown, visual penalties, and solve handoff in sync. */
+/** Shared inspection duration keeps both display styles and solve handoff in sync. */
 object InspectionRules {
     const val COUNTDOWN_SECONDS = 15L
     const val COUNTDOWN_NANOS = COUNTDOWN_SECONDS * 1_000_000_000L
-    const val PLUS_TWO_NANOS = COUNTDOWN_NANOS
-    const val DNF_NANOS = 17_000_000_000L
 }
 
 class TimerEngine(private val nowNanos: () -> Long) {

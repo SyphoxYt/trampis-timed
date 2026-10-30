@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.5 — 2026-10-30
+
+- Made both inspection display modes hand off to solve count-up at the same 15-second monotonic deadline.
+- A tap during inspection now starts the solve immediately; the first tap still starts inspection.
+- Removed +2/DNF indicators and automatic penalties from inspection; the setting now controls only count-up versus count-down display.
+- Matched spoken 8/12-second alerts to the selected display direction and made each cue fire once per inspection.
+- Updated Android version code to 15 and version name to 1.0.5.
+
 ## 1.0.4 — 2026-10-30
 
 - Added double-tap on the scramble card to skip to the next scramble, respecting scramble lock and using existing haptic/sound feedback.
