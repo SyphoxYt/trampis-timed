@@ -109,6 +109,7 @@ import androidx.compose.runtime.remember
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
@@ -307,6 +308,7 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
     val holdTime by vm.holdTimeMillis.collectAsState()
     val haptics by vm.hapticsEnabled.collectAsState()
     val inspectionAlerts by vm.inspectionAlertsEnabled.collectAsState()
+    val solveSounds by vm.solveSoundsEnabled.collectAsState()
     val timerStats by vm.timerStatsEnabled.collectAsState()
     val scrambleDrawing by vm.scrambleDrawingEnabled.collectAsState()
     val decimalPlaces by vm.displayDecimalPlaces.collectAsState()
@@ -395,8 +397,7 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
           AnimatedContent(targetState = page, modifier = Modifier.fillMaxSize().widthIn(max = 1200.dp), transitionSpec = {
               if (!motionEnabled) androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None
-              else (fadeIn(androidx.compose.animation.core.tween(240)) + androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(280)) { it / 16 }) togetherWith
-                  (fadeOut(androidx.compose.animation.core.tween(160)) + androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(200)) { -it / 24 })
+              else fadeIn(androidx.compose.animation.core.tween(125, delayMillis = 55)) togetherWith fadeOut(androidx.compose.animation.core.tween(55)) using null
           }, label = "cube-page") { visiblePage ->
             when (visiblePage) {
                 "Timer" -> TimerPage(vm, selected, solves, scramble, scrambleSvg, scrambleLocked, running, inspecting, preparing, elapsed, inspectionElapsed, inspectionCountdown, phaseSplits, holdTime, haptics, timerStats, scrambleDrawing, decimalPlaces, boldTimerDigits, timerFontWeight, timerSizeScale, scrambleTextSize, timerFontPreset, error) { showSessions = true }
@@ -425,7 +426,7 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
                 "Tools" -> ToolsPage(selectedTool, onBack = { if (selectedTool != null) selectedTool = null else page = "Settings" }, onSelect = { selectedTool = it }, holdTime = holdTime)
                 "Appearance" -> AppearancePage(appearanceOverride, appearanceDark, staticGradient, graphGlow, graphAnimation, showConfetti, boldTimerDigits, timerFontWeight, statsCardMotion, timerSizeScale, scrambleTextSize, timerFontPreset, vm,
                     onBack = { page = "Settings" })
-                else -> Column(Modifier.fillMaxSize()) { PageHeading("Settings"); MorePage(inspectionEnabled, inspectionCountdown, holdTime, haptics, inspectionAlerts, timerStats, scrambleDrawing, decimalPlaces, vm, { page = "Tools" }, { page = "Appearance" }) }
+                else -> Column(Modifier.fillMaxSize()) { PageHeading("Settings"); MorePage(inspectionEnabled, inspectionCountdown, holdTime, haptics, inspectionAlerts, solveSounds, timerStats, scrambleDrawing, decimalPlaces, vm, { page = "Tools" }, { page = "Appearance" }) }
             }
           }
         }
@@ -735,7 +736,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 }
             }
-            if (!scrambleLocked && !running) IconButton(onClick = { vm.nextScramble() }) { Icon(Icons.Filled.Refresh, contentDescription = "Next scramble", tint = MaterialTheme.colorScheme.primary) }
+            if (!scrambleLocked && !running) IconButton(onClick = { vm.nextScramble(playCue = true) }) { Icon(Icons.Filled.Refresh, contentDescription = "Next scramble", tint = MaterialTheme.colorScheme.primary) }
             if (scrambleLocked) IconButton(onClick = { vm.toggleScrambleLock() }, enabled = !running) { Icon(Icons.Filled.Lock, contentDescription = "Unlock scramble", tint = MaterialTheme.colorScheme.primary) }
         }
         Box(Modifier.fillMaxWidth().then(if (landscapeLayout) Modifier.heightIn(min = 72.dp).weight(.7f) else Modifier.weight(if (compactLayout) 0.28f else 0.4f)), contentAlignment = Alignment.Center) {
@@ -758,7 +759,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
                 DropdownMenu(expanded = showScrambleMenu, onDismissRequest = { showScrambleMenu = false }) {
                     DropdownMenuItem(text = { Text("Copy Scramble") }, onClick = { clipboard.setText(AnnotatedString(scramble)); showScrambleMenu = false })
                     DropdownMenuItem(text = { Text(if (scrambleLocked) "Unlock Scramble" else "Lock Scramble") }, onClick = { vm.toggleScrambleLock(); showScrambleMenu = false })
-                    if (!scrambleLocked) DropdownMenuItem(text = { Text("Next Scramble") }, onClick = { vm.nextScramble(); showScrambleMenu = false })
+                    if (!scrambleLocked) DropdownMenuItem(text = { Text("Next Scramble") }, onClick = { vm.nextScramble(playCue = true); showScrambleMenu = false })
                 }
             }
         }
@@ -784,7 +785,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
             val control = event.nativeKeyEvent.isCtrlPressed
             if (control && event.type == KeyEventType.KeyDown) {
                 when (event.key) {
-                    Key.N -> { if (!scrambleLocked && !running) vm.nextScramble(); true }
+                    Key.N -> { if (!scrambleLocked && !running) vm.nextScramble(playCue = true); true }
                     Key.Backspace, Key.Z -> { deleteLastSolve = solves.firstOrNull(); true }
                     Key.One -> { solves.firstOrNull()?.let { vm.applyPenalty(it.id, Penalty.NONE) }; true }
                     Key.Two -> { solves.firstOrNull()?.let { vm.applyPenalty(it.id, Penalty.PLUS_TWO) }; true }
@@ -841,7 +842,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
                         "down" -> showPenaltyOptions = solves.isNotEmpty()
                         "up" -> showPenaltyOptions = false
                         "left" -> deleteLastSolve = solves.firstOrNull()
-                        "right" -> if (scrambleLocked) confirmUnlockScramble = true else vm.nextScramble()
+                        "right" -> if (scrambleLocked) confirmUnlockScramble = true else vm.nextScramble(playCue = true)
                     }
                     return@awaitEachGesture
                 }
@@ -1807,7 +1808,7 @@ private fun CalculatorToolPage() {
 }
 
 @Composable
-private fun MorePage(inspectionEnabled: Boolean, inspectionCountdown: Boolean, holdTime: Long, haptics: Boolean, inspectionAlerts: Boolean, timerStats: Boolean, scrambleDrawing: Boolean, decimalPlaces: Int, vm: TimerViewModel, onTools: () -> Unit, onAppearance: () -> Unit) {
+private fun MorePage(inspectionEnabled: Boolean, inspectionCountdown: Boolean, holdTime: Long, haptics: Boolean, inspectionAlerts: Boolean, solveSounds: Boolean, timerStats: Boolean, scrambleDrawing: Boolean, decimalPlaces: Int, vm: TimerViewModel, onTools: () -> Unit, onAppearance: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SettingGroup("Appearance") {
             ListItem(headlineContent = { Text("Appearance", fontWeight = FontWeight.Medium) }, supportingContent = { Text("Theme, graph style, and timer preview") }, trailingContent = { Text("›", color = MaterialTheme.colorScheme.primary, fontSize = 24.sp) }, modifier = Modifier.clickable(onClick = onAppearance))
@@ -1818,6 +1819,7 @@ private fun MorePage(inspectionEnabled: Boolean, inspectionCountdown: Boolean, h
                 SettingSwitch("Inspection Counts Down", "Display the remaining inspection seconds.", inspectionCountdown, vm::setInspectionCountdownEnabled)
                 SettingSwitch("Inspection Alerts", "Play CubeTime's audio cues at 8 and 12 seconds.", inspectionAlerts, vm::setInspectionAlertsEnabled)
             }
+            SettingSwitch("Solve Sounds", "Play short cues for solves, new bests, sessions, and scramble refreshes.", solveSounds, vm::setSolveSoundsEnabled)
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { Text("Hold Down Time", fontWeight = FontWeight.Medium); Text("${"%.2f".format(holdTime / 1000f)} seconds", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 TextButton(onClick = { vm.setHoldTimeSeconds((holdTime - 50).coerceAtLeast(0).toFloat() / 1000f) }) { Text("−") }

@@ -2,6 +2,10 @@
 
 Trampis Timed is the Android continuation of CubeTime, ported from the original project to Kotlin and Jetpack Compose.
 
+## Version 1.0.1
+
+The 1.0.1 update keeps the display awake while the app is visible, adds optional sound cues for solving, personal bests, session creation, and scramble refresh, and replaces the page-slide navigation with a cleaner sequential fade.
+
 ## Version 1.0.0
 
 The v1 release adds all-session solve browsing with session filters, selectable single/Ao5/Ao12 trends and solve drill-down, session archive/restore/order/duplicate tools, undo for destructive deletes, and a review-before-import flow with format and size validation. Appearance adds System/Light/Dark modes, animated theme transitions, gradients, rainbow and custom color choices, an accent-matched Stats gradient, high contrast, reduced motion, and a Rubik interface font. Layouts adapt for compact widths, tablets, landscape, split-screen, and larger system text. Room schema v4 includes session ordering and archive state.
