@@ -17,6 +17,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
@@ -114,12 +115,13 @@ class MainActivity : ComponentActivity() {
 private fun CubeTimeAppThemeHost(vm: TimerViewModel = viewModel()) {
     val override by vm.appearanceOverride.collectAsState()
     val darkSetting by vm.appearanceDark.collectAsState()
+    val accentPreset by vm.accentPreset.collectAsState()
     val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
-    TrampisTheme(if (override) darkSetting else systemDark) { CubeTimeApp(vm) }
+    TrampisTheme(if (override) darkSetting else systemDark, accentPreset) { CubeTimeApp(vm) }
 }
 
 @Composable
-private fun TrampisTheme(dark: Boolean, content: @Composable () -> Unit) {
+private fun TrampisTheme(dark: Boolean, accentPreset: String, content: @Composable () -> Unit) {
     val view = LocalView.current
     SideEffect {
         if (!view.isInEditMode) {
@@ -130,9 +132,14 @@ private fun TrampisTheme(dark: Boolean, content: @Composable () -> Unit) {
             }
         }
     }
-    val accent = Color(0xFF5179F6)
+    val accent = when (accentPreset) {
+        "violet" -> Color(0xFF9B72F2)
+        "mint" -> Color(0xFF31B9A3)
+        "amber" -> Color(0xFFF0A83A)
+        else -> Color(0xFF5179F6)
+    }
     val colors = if (dark) darkColorScheme(
-        primary = Color(0xFF4D74F5), onPrimary = Color.White,
+        primary = accent, onPrimary = Color.White,
         background = Color(0xFF080A12), surface = Color(0xFF151926), onSurface = Color(0xFFF7F8FF),
         surfaceVariant = Color(0xFF202638), onSurfaceVariant = Color(0xFFADB5C9),
     ) else lightColorScheme(
@@ -247,6 +254,8 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
     val graphGlow by vm.graphGlow.collectAsState()
     val graphAnimation by vm.graphAnimation.collectAsState()
     val showConfetti by vm.showConfetti.collectAsState()
+    val boldTimerDigits by vm.boldTimerDigits.collectAsState()
+    val statsCardMotion by vm.statsCardMotion.collectAsState()
     val elapsed by vm.elapsedNanos.collectAsState()
     val inspectionElapsed by vm.inspectionNanos.collectAsState()
     val phaseSplits by vm.phaseSplitsNanos.collectAsState()
@@ -304,9 +313,9 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
                   (fadeOut(androidx.compose.animation.core.tween(160)) + androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(200)) { -it / 24 })
           }, label = "cube-page") { visiblePage ->
             when (visiblePage) {
-                "Timer" -> TimerPage(vm, selected, solves, scramble, scrambleSvg, scrambleLocked, running, inspecting, preparing, elapsed, inspectionElapsed, inspectionCountdown, phaseSplits, holdTime, haptics, timerStats, scrambleDrawing, decimalPlaces, error) { showSessions = true }
+                "Timer" -> TimerPage(vm, selected, solves, scramble, scrambleSvg, scrambleLocked, running, inspecting, preparing, elapsed, inspectionElapsed, inspectionCountdown, phaseSplits, holdTime, haptics, timerStats, scrambleDrawing, decimalPlaces, boldTimerDigits, error) { showSessions = true }
                 "Solves" -> Column(Modifier.fillMaxSize()) { PageHeading("Times"); SolvesPage(solves, sessions, selected?.id, vm) }
-                "Stats" -> StatsPage(solves, selected, staticGradient, graphGlow, graphAnimation) { showSessions = true }
+                "Stats" -> StatsPage(solves, selected, staticGradient, graphGlow, graphAnimation, statsCardMotion) { showSessions = true }
                 "Sessions" -> Column(Modifier.fillMaxSize()) {
                     PageHeading("Sessions", action = { showNewSession = true })
                     SessionsPage(
@@ -323,7 +332,7 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
                     )
                 }
                 "Tools" -> ToolsPage(selectedTool, onBack = { if (selectedTool != null) selectedTool = null else page = "Settings" }, onSelect = { selectedTool = it }, holdTime = holdTime)
-                "Appearance" -> AppearancePage(appearanceOverride, appearanceDark, staticGradient, graphGlow, graphAnimation, showConfetti, vm,
+                "Appearance" -> AppearancePage(appearanceOverride, appearanceDark, staticGradient, graphGlow, graphAnimation, showConfetti, boldTimerDigits, statsCardMotion, vm,
                     onBack = { page = "Settings" })
                 else -> Column(Modifier.fillMaxSize()) { PageHeading("Settings"); MorePage(inspectionEnabled, inspectionCountdown, holdTime, haptics, inspectionAlerts, timerStats, scrambleDrawing, decimalPlaces, vm, { page = "Tools" }, { page = "Appearance" }) }
             }
@@ -375,7 +384,7 @@ private fun CubeTabBar(selected: String, onSelect: (String) -> Unit) {
 @Composable
 private fun PageHeading(title: String, action: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         if (action != null) TextButton(onClick = action) { Text("＋") }
     }
 }
@@ -474,7 +483,7 @@ private fun SessionEditDialog(session: SessionEntity, onDismiss: () -> Unit, onS
 
 @Composable
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<SolveEntity>, scramble: String, scrambleSvg: String?, scrambleLocked: Boolean, running: Boolean, inspecting: Boolean, preparing: Boolean, elapsed: Long, inspectionElapsed: Long, inspectionCountdown: Boolean, phaseSplits: List<Long>, holdTime: Long, hapticsEnabled: Boolean, showStats: Boolean, showScrambleDrawing: Boolean, decimalPlaces: Int, error: String?, onShowSessions: () -> Unit) {
+private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<SolveEntity>, scramble: String, scrambleSvg: String?, scrambleLocked: Boolean, running: Boolean, inspecting: Boolean, preparing: Boolean, elapsed: Long, inspectionElapsed: Long, inspectionCountdown: Boolean, phaseSplits: List<Long>, holdTime: Long, hapticsEnabled: Boolean, showStats: Boolean, showScrambleDrawing: Boolean, decimalPlaces: Int, boldTimerDigits: Boolean, error: String?, onShowSessions: () -> Unit) {
     var showScramble by remember { mutableStateOf(false) }
     var showScrambleMenu by remember { mutableStateOf(false) }
     var showEventPicker by remember { mutableStateOf(false) }
@@ -642,7 +651,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
                 }
             }
             Row(Modifier.graphicsLayer { scaleX = timerScale; scaleY = timerScale }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                Text(timeText, fontFamily = FontFamily(Font(R.font.recursive)), fontSize = timerSize, fontWeight = FontWeight.Light, color = animatedTimerColor, maxLines = 1, softWrap = false)
+                Text(timeText, fontFamily = FontFamily(Font(R.font.recursive)), fontSize = timerSize, fontWeight = if (boldTimerDigits) FontWeight.Bold else FontWeight.Medium, color = animatedTimerColor, maxLines = 1, softWrap = false)
                 if (inspecting && inspectionElapsed >= 15_000_000_000L) {
                     Text(if (inspectionElapsed >= 17_000_000_000L) " [DNF]" else " [+2]", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = timerColor)
                 }
@@ -950,7 +959,7 @@ private fun SolveDetailDialog(solve: SolveEntity, vm: TimerViewModel, onDismiss:
 }
 
 @Composable
-private fun StatsPage(solves: List<SolveEntity>, session: SessionEntity? = null, staticGradient: Boolean = true, graphGlow: Boolean = true, graphAnimation: Boolean = true, onChooseSession: () -> Unit = {}) {
+private fun StatsPage(solves: List<SolveEntity>, session: SessionEntity? = null, staticGradient: Boolean = true, graphGlow: Boolean = true, graphAnimation: Boolean = true, cardMotion: Boolean = true, onChooseSession: () -> Unit = {}) {
     val results = solves.reversed().map { solve ->
         TimedResult(solve.timeMillis, when (solve.penalty) { Penalty.PLUS_TWO.ordinal -> Penalty.PLUS_TWO; Penalty.DNF.ordinal -> Penalty.DNF; else -> Penalty.NONE })
     }
@@ -968,7 +977,7 @@ private fun StatsPage(solves: List<SolveEntity>, session: SessionEntity? = null,
     Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(
         MaterialTheme.colorScheme.primary.copy(alpha = .09f), MaterialTheme.colorScheme.background, MaterialTheme.colorScheme.background,
     ))).verticalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 24.dp)) {
-        Text("Stats", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
+        Text("Stats", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
             .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
@@ -983,22 +992,22 @@ private fun StatsPage(solves: List<SolveEntity>, session: SessionEntity? = null,
             val progress = Statistics.compSimProgress(results, session.targetMillis)
             val complete = progress.groups.filter { it.average != null }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatsCard("CURRENT", formatAverage(progress.groups.lastOrNull()?.average), Modifier.weight(1f), height = 158)
-                StatsCard("AVERAGES", complete.size.toString(), Modifier.weight(1f), height = 158)
+                StatsCard("CURRENT", formatAverage(progress.groups.lastOrNull()?.average), Modifier.weight(1f), height = 158, motionEnabled = cardMotion)
+                StatsCard("AVERAGES", complete.size.toString(), Modifier.weight(1f), height = 158, motionEnabled = cardMotion)
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatsCard("TARGET", formatMillis(session.targetMillis), Modifier.weight(1f))
-                StatsCard("REACHED", complete.count { it.average?.let { avg -> !avg.isDnf && (avg.millis ?: Double.POSITIVE_INFINITY) <= session.targetMillis } == true }.toString(), Modifier.weight(1f))
+                StatsCard("TARGET", formatMillis(session.targetMillis), Modifier.weight(1f), motionEnabled = cardMotion)
+                StatsCard("REACHED", complete.count { it.average?.let { avg -> !avg.isDnf && (avg.millis ?: Double.POSITIVE_INFINITY) <= session.targetMillis } == true }.toString(), Modifier.weight(1f), motionEnabled = cardMotion)
             }
-            StatsTrendChart(solves)
-            StatsDistributionChart(solves)
+            StatsTrendChart(solves, graphGlow, graphAnimation)
+            StatsDistributionChart(solves, graphAnimation)
             return@Column
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatsCard("CURRENT STATS", listOf("AO5" to formatAverage(ao5), "AO12" to formatAverage(ao12), "AO100" to formatAverage(ao100)), Modifier.weight(1f), height = 164)
+                StatsCard("CURRENT STATS", listOf("AO5" to formatAverage(ao5), "AO12" to formatAverage(ao12), "AO100" to formatAverage(ao100)), Modifier.weight(1f), height = 164, motionEnabled = cardMotion)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatsCard("SOLVE COUNT", solves.size.toString(), Modifier.fillMaxWidth(), height = 77)
-                StatsCard("SESSION MEAN", mean?.let(::formatMillis) ?: "—", Modifier.fillMaxWidth(), height = 77)
+                StatsCard("SOLVE COUNT", solves.size.toString(), Modifier.fillMaxWidth(), height = 77, motionEnabled = cardMotion)
+                StatsCard("SESSION MEAN", mean?.let(::formatMillis) ?: "—", Modifier.fillMaxWidth(), height = 77, motionEnabled = cardMotion)
             }
         }
         val bestWindow = results.takeIf { it.size >= 5 }?.windowed(5)?.minByOrNull { w ->
@@ -1006,17 +1015,17 @@ private fun StatsPage(solves: List<SolveEntity>, session: SessionEntity? = null,
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatsCard("BEST SINGLE", best?.let(::formatMillis) ?: "—", Modifier.fillMaxWidth(), accent = true, dynamic = !staticGradient)
-                StatsCard("BEST STATS", listOf("AO12" to formatAverage(bestAo12), "AO100" to formatAverage(bestAo100)), Modifier.fillMaxWidth(), height = 150)
+                StatsCard("BEST SINGLE", best?.let(::formatMillis) ?: "—", Modifier.fillMaxWidth(), accent = true, dynamic = !staticGradient, motionEnabled = cardMotion)
+                StatsCard("BEST STATS", listOf("AO12" to formatAverage(bestAo12), "AO100" to formatAverage(bestAo100)), Modifier.fillMaxWidth(), height = 150, motionEnabled = cardMotion)
             }
             StatsCard("BEST AO5", bestAo5?.let(::formatAverage) ?: "—", Modifier.weight(1f), height = 235,
                 details = bestWindow?.mapIndexed { i, r ->
                     val text = if (r.penalty == Penalty.DNF) "DNF" else formatMillis(r.adjustedMillis)
                     if (Statistics.average(bestWindow)?.trimmed?.contains(i) == true) "($text)" else text
-                }.orEmpty())
+                }.orEmpty(), motionEnabled = cardMotion)
         }
         StatsTrendChart(solves, graphGlow, graphAnimation)
-        StatsDistributionChart(solves)
+        StatsDistributionChart(solves, graphAnimation)
     }
 }
 
@@ -1028,19 +1037,25 @@ private fun formatAverage(average: app.trampis.timed.domain.Average?): String = 
 }
 
 @Composable
-private fun StatsCard(title: String, values: List<Pair<String, String>>, modifier: Modifier = Modifier, height: Int = 140) {
+private fun StatsCard(title: String, values: List<Pair<String, String>>, modifier: Modifier = Modifier, height: Int = 140, motionEnabled: Boolean = true) {
     val scale = LocalDensity.current.fontScale.coerceIn(1f, 1.45f)
     val cardShape = RoundedCornerShape(22.dp)
-    Column(modifier.height((height * scale).dp).background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .76f), MaterialTheme.colorScheme.surface,
-    )), cardShape).padding(horizontal = 15.dp, vertical = 12.dp)) {
-        Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-        Spacer(Modifier.height(7.dp))
-        values.forEach { (label, value) ->
-            Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center) {
-                Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                AnimatedContent(value, transitionSpec = { fadeIn(androidx.compose.animation.core.tween(180)) + androidx.compose.animation.slideInVertically { it / 3 } togetherWith fadeOut(androidx.compose.animation.core.tween(100)) }, label = "stat-value") { shown ->
-                    Text(shown, style = MaterialTheme.typography.titleLarge, fontFamily = FontFamily(Font(R.font.recursive)), fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+    var visible by remember(title) { mutableStateOf(false) }
+    LaunchedEffect(title, motionEnabled) { if (motionEnabled) { visible = false; delay(40L + (title.length % 5) * 55L) }; visible = true }
+    androidx.compose.animation.AnimatedVisibility(visible, modifier = modifier.height((height * scale).dp),
+        enter = if (motionEnabled) fadeIn(androidx.compose.animation.core.tween(360)) + androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(420)) { it / 12 } + androidx.compose.animation.scaleIn(initialScale = .95f, animationSpec = androidx.compose.animation.core.tween(420)) else androidx.compose.animation.EnterTransition.None,
+        label = "stats-card-enter-$title") {
+        Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .76f), MaterialTheme.colorScheme.surface,
+        )), cardShape).padding(horizontal = 15.dp, vertical = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Spacer(Modifier.height(7.dp))
+            values.forEach { (label, value) ->
+                Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center) {
+                    Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    AnimatedContent(value, transitionSpec = { fadeIn(androidx.compose.animation.core.tween(180)) + androidx.compose.animation.slideInVertically { it / 3 } togetherWith fadeOut(androidx.compose.animation.core.tween(100)) }, label = "stat-value") { shown ->
+                        Text(shown, style = MaterialTheme.typography.titleLarge, fontFamily = FontFamily(Font(R.font.recursive)), fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                    }
                 }
             }
         }
@@ -1048,24 +1063,30 @@ private fun StatsCard(title: String, values: List<Pair<String, String>>, modifie
 }
 
 @Composable
-private fun StatsCard(title: String, value: String, modifier: Modifier = Modifier, height: Int = 88, accent: Boolean = false, details: List<String> = emptyList(), dynamic: Boolean = false) {
+private fun StatsCard(title: String, value: String, modifier: Modifier = Modifier, height: Int = 88, accent: Boolean = false, details: List<String> = emptyList(), dynamic: Boolean = false, motionEnabled: Boolean = true) {
     val shape = RoundedCornerShape(22.dp)
     val color = MaterialTheme.colorScheme.surface
     val scale = LocalDensity.current.fontScale.coerceIn(1f, 1.45f)
     val gradientColors = if (dynamic) listOf(Color(0xFF27C4B8), Color(0xFFB6D944), Color(0xFFFFB52E), Color(0xFFE84F82), Color(0xFF7158E8)) else listOf(Color(0xFF83A6FF), Color(0xFF4169E1))
-    Column((if (accent) modifier.background(androidx.compose.ui.graphics.Brush.linearGradient(gradientColors), shape) else modifier.background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .76f), color)), shape)).height((height * scale).dp)
-        .padding(horizontal = 14.dp, vertical = 10.dp)) {
-        Text(title, style = MaterialTheme.typography.labelLarge, color = if (accent) Color.White.copy(alpha = .85f) else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-        if (details.isEmpty()) {
-            AnimatedContent(value, transitionSpec = { fadeIn(androidx.compose.animation.core.tween(180)) + androidx.compose.animation.slideInVertically { it / 3 } togetherWith fadeOut(androidx.compose.animation.core.tween(100)) }, label = "stat-card-value") { shown ->
-                Text(shown, style = MaterialTheme.typography.headlineMedium, fontFamily = FontFamily(Font(R.font.recursive)), fontWeight = FontWeight.Bold,
-                    color = if (accent) Color.White else MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f).wrapContentHeight(Alignment.Bottom), maxLines = 1, softWrap = false)
+    var visible by remember(title) { mutableStateOf(false) }
+    LaunchedEffect(title, motionEnabled) { if (motionEnabled) { visible = false; delay(40L + (title.length % 5) * 55L) }; visible = true }
+    androidx.compose.animation.AnimatedVisibility(visible, modifier = modifier.height((height * scale).dp),
+        enter = if (motionEnabled) fadeIn(androidx.compose.animation.core.tween(360)) + androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(420)) { it / 12 } + androidx.compose.animation.scaleIn(initialScale = .95f, animationSpec = androidx.compose.animation.core.tween(420)) else androidx.compose.animation.EnterTransition.None,
+        label = "stats-card-enter-$title") {
+        Column(Modifier.fillMaxSize().background(if (accent) androidx.compose.ui.graphics.Brush.linearGradient(gradientColors) else androidx.compose.ui.graphics.Brush.linearGradient(listOf(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .76f), color)), shape)
+            .padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(title, style = MaterialTheme.typography.labelLarge, color = if (accent) Color.White.copy(alpha = .85f) else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            if (details.isEmpty()) {
+                AnimatedContent(value, transitionSpec = { fadeIn(androidx.compose.animation.core.tween(180)) + androidx.compose.animation.slideInVertically { it / 3 } togetherWith fadeOut(androidx.compose.animation.core.tween(100)) }, label = "stat-card-value") { shown ->
+                    Text(shown, style = MaterialTheme.typography.headlineMedium, fontFamily = FontFamily(Font(R.font.recursive)), fontWeight = FontWeight.Bold,
+                        color = if (accent) Color.White else MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f).wrapContentHeight(Alignment.Bottom), maxLines = 1, softWrap = false)
+                }
+            } else {
+                Text(value, style = MaterialTheme.typography.headlineMedium, fontFamily = FontFamily(Font(R.font.recursive)), fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false)
+                Spacer(Modifier.weight(1f))
+                details.forEach { Text(it, style = MaterialTheme.typography.bodyLarge, fontFamily = FontFamily(Font(R.font.recursive)), color = if (it.startsWith("(")) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface, maxLines = 1) }
             }
-        } else {
-            Text(value, style = MaterialTheme.typography.headlineMedium, fontFamily = FontFamily(Font(R.font.recursive)), fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false)
-            Spacer(Modifier.weight(1f))
-            details.forEach { Text(it, style = MaterialTheme.typography.bodyLarge, fontFamily = FontFamily(Font(R.font.recursive)), color = if (it.startsWith("(")) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface, maxLines = 1) }
         }
     }
 }
@@ -1115,7 +1136,7 @@ private fun StatsTrendChart(solvesDescending: List<SolveEntity>, glowEnabled: Bo
 }
 
 @Composable
-private fun StatsDistributionChart(solvesDescending: List<SolveEntity>) {
+private fun StatsDistributionChart(solvesDescending: List<SolveEntity>, animationEnabled: Boolean = true) {
     val values = solvesDescending.mapNotNull { solve ->
         when (solve.penalty) {
             Penalty.DNF.ordinal -> null
@@ -1129,6 +1150,10 @@ private fun StatsDistributionChart(solvesDescending: List<SolveEntity>) {
     val grid = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.22f)
     val medianColor = MaterialTheme.colorScheme.onSurface
     val median = Statistics.median(values.map { TimedResult(it) })
+    val barReveal = remember(bins, animationEnabled) { androidx.compose.animation.core.Animatable(if (animationEnabled) 0f else 1f) }
+    LaunchedEffect(bins, animationEnabled) {
+        if (animationEnabled) barReveal.animateTo(1f, androidx.compose.animation.core.tween(720, easing = androidx.compose.animation.core.FastOutSlowInEasing)) else barReveal.snapTo(1f)
+    }
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).padding(14.dp)) {
         Text("Time Distribution", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
         Text(
@@ -1155,7 +1180,8 @@ private fun StatsDistributionChart(solvesDescending: List<SolveEntity>) {
                 val slot = size.width / bins.size
                 val barWidth = slot * 0.62f
                 bins.forEachIndexed { index, bin ->
-                    val height = (bottom - top) * bin.count / maxCount
+                    val stagger = if (animationEnabled) (.82f + .18f * (index + 1) / bins.size) else 1f
+                    val height = (bottom - top) * bin.count / maxCount * barReveal.value * stagger
                     val left = index * slot + (slot - barWidth) / 2f
                     drawRoundRect(
                         color = if (index == selected) accent else accent.copy(alpha = 0.68f),
@@ -1422,14 +1448,27 @@ private fun MorePage(inspectionEnabled: Boolean, inspectionCountdown: Boolean, h
 }
 
 @Composable
-private fun AppearancePage(override: Boolean, dark: Boolean, staticGradient: Boolean, graphGlow: Boolean, graphAnimation: Boolean, confetti: Boolean, vm: TimerViewModel, onBack: () -> Unit) {
+private fun AppearancePage(override: Boolean, dark: Boolean, staticGradient: Boolean, graphGlow: Boolean, graphAnimation: Boolean, confetti: Boolean, boldTimerDigits: Boolean, statsCardMotion: Boolean, vm: TimerViewModel, onBack: () -> Unit) {
     var showReset by remember { mutableStateOf(false) }
+    val currentAccent by vm.accentPreset.collectAsState()
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 16.dp, top = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("‹ Settings") }
             Text("Appearance", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingGroup("Accent Color") {
+                Text("Choose a color for active controls, charts, and highlights.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+                val choices = listOf("blue" to "Blue", "violet" to "Violet", "mint" to "Mint", "amber" to "Amber")
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    choices.forEach { (key, label) ->
+                        val tint = when (key) { "violet" -> Color(0xFF9B72F2); "mint" -> Color(0xFF31B9A3); "amber" -> Color(0xFFF0A83A); else -> Color(0xFF5179F6) }
+                        FilterChip(selected = currentAccent == key, onClick = { vm.setAccentPreset(key) },
+                            label = { Text(label) }, leadingIcon = { Box(Modifier.size(12.dp).background(tint, RoundedCornerShape(50))) })
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
             SettingGroup("General Appearance") {
                 Text("Customise the gradients used in stats. Choose a static CubeTime blue or a gradient that changes throughout the day.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
                 Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1445,33 +1484,18 @@ private fun AppearancePage(override: Boolean, dark: Boolean, staticGradient: Boo
                 Spacer(Modifier.height(8.dp))
                 SettingSwitch("Graph Glow", "Turn the glow effect on or off on graphs.", graphGlow, vm::setGraphGlow)
                 SettingSwitch("Graph Animation", "Animate the time trend line.", graphAnimation, vm::setGraphAnimation)
+                SettingSwitch("Stats Card Motion", "Animate statistic cards when Stats opens.", statsCardMotion, vm::setStatsCardMotion)
                 SettingSwitch("Show Confetti", "Celebrate a new best time.", confetti, vm::setShowConfetti)
             }
             SettingGroup("System Settings") {
                 SettingSwitch("Override System Appearance", "Use a selected theme instead of your device setting.", override, vm::setAppearanceOverride)
                 if (override) SettingSwitch("Dark Mode", "Use CubeTime’s dark appearance.", dark, vm::setAppearanceDark)
             }
-            SettingGroup("Font Settings") {
-                Text("Scramble Size", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 14.dp, top = 10.dp))
-                var scrambleSize by remember { mutableIntStateOf(18) }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { scrambleSize = (scrambleSize - 1).coerceAtLeast(15) }) { Text("−") }
-                    Text("$scrambleSize", modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    TextButton(onClick = { scrambleSize = (scrambleSize + 1).coerceAtMost(36) }) { Text("+") }
-                }
-                Text("Preview", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp))
-                Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp).background(MaterialTheme.colorScheme.background, RoundedCornerShape(12.dp)).clickable { }.padding(12.dp)) {
-                    Text("L' D R2 B2 D2 F2 R2 B2 D R2 D R2 U B' R F2 R U' F L2 D'", fontFamily = FontFamily(Font(R.font.recursive)), fontSize = scrambleSize.sp)
-                    Text("Timer preview", modifier = Modifier.align(Alignment.End), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                }
-                Text("Font Weight", modifier = Modifier.padding(start = 14.dp, top = 8.dp))
-                var weight by remember { mutableFloatStateOf(.55f) }
-                Slider(value = weight, onValueChange = { weight = it }, modifier = Modifier.padding(horizontal = 12.dp))
-                Text("Font Casualness", modifier = Modifier.padding(start = 14.dp))
-                var casualness by remember { mutableFloatStateOf(0f) }
-                Slider(value = casualness, onValueChange = { casualness = it }, modifier = Modifier.padding(horizontal = 12.dp))
-                var cursive by remember { mutableStateOf(false) }
-                SettingSwitch("Cursive Font", "Use cursive timer text.", cursive) { cursive = it }
+            SettingGroup("Timer Typography") {
+                SettingSwitch("Bold Timer Digits", "Use a stronger, clearer weight for the main timer.", boldTimerDigits, vm::setBoldTimerDigits)
+                Text("00.000", fontFamily = FontFamily(Font(R.font.recursive)), fontSize = 34.sp,
+                    fontWeight = if (boldTimerDigits) FontWeight.Bold else FontWeight.Medium, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 12.dp))
             }
             OutlinedButton(onClick = { showReset = true }, modifier = Modifier.fillMaxWidth()) { Text("↻  Reset Appearance Settings", color = Color(0xFFE34F53)) }
             Spacer(Modifier.height(20.dp))
