@@ -523,10 +523,12 @@ private fun PageHeading(title: String, action: (() -> Unit)? = null) {
 
 @Composable
 private fun SessionsPage(sessions: List<SessionEntity>, selected: SessionEntity?, solveCounts: Map<Long, Int>, onSelect: (Long) -> Unit, onCreate: () -> Unit, onPin: (SessionEntity) -> Unit, onDuplicate: (SessionEntity) -> Unit, onArchive: (SessionEntity, Boolean) -> Unit, onMoveToTop: (SessionEntity) -> Unit, onUpdate: (SessionEntity) -> Unit, onDelete: (Long) -> Unit, onExportCsv: () -> Unit, onExportCsTimer: () -> Unit, onExportOds: () -> Unit, onBackup: () -> Unit, onImport: () -> Unit, lastBackupAt: Long) {
-    var editSession by remember { mutableStateOf<SessionEntity?>(null) }
-    var deleteSession by remember { mutableStateOf<SessionEntity?>(null) }
-    var showDataMenu by remember { mutableStateOf(false) }
-    var showArchived by remember { mutableStateOf(false) }
+    var editSessionId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Long?>(null) }
+    var deleteSessionId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Long?>(null) }
+    var showDataMenu by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var showArchived by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val editSession = sessions.firstOrNull { it.id == editSessionId }
+    val deleteSession = sessions.firstOrNull { it.id == deleteSessionId }
     val visibleSessions = remember(sessions, showArchived) { sessions.filter { it.archived == showArchived } }
     val pinned = remember(visibleSessions) { visibleSessions.filter { it.pinned } }
     val regular = remember(visibleSessions) { visibleSessions.filterNot { it.pinned } }
@@ -565,7 +567,7 @@ private fun SessionsPage(sessions: List<SessionEntity>, selected: SessionEntity?
                     SessionCardRow(session, selected?.id == session.id, solveCounts[session.id] ?: 0,
                         onSelect = { onSelect(session.id) }, onPin = { onPin(session) }, onArchive = { onArchive(session, !session.archived) }, onMoveToTop = { onMoveToTop(session) },
                         onDuplicate = { onDuplicate(session) },
-                        onCustomize = { editSession = session }, onDelete = { deleteSession = session })
+                        onCustomize = { editSessionId = session.id }, onDelete = { deleteSessionId = session.id })
                 }
             }
             item(key = "sessions-header") { SessionSectionHeader(if (pinned.isEmpty()) "ALL SESSIONS" else "SESSIONS", regular.size) }
@@ -573,7 +575,7 @@ private fun SessionsPage(sessions: List<SessionEntity>, selected: SessionEntity?
                 SessionCardRow(session, selected?.id == session.id, solveCounts[session.id] ?: 0,
                     onSelect = { onSelect(session.id) }, onPin = { onPin(session) }, onArchive = { onArchive(session, !session.archived) }, onMoveToTop = { onMoveToTop(session) },
                     onDuplicate = { onDuplicate(session) },
-                    onCustomize = { editSession = session }, onDelete = { deleteSession = session })
+                    onCustomize = { editSessionId = session.id }, onDelete = { deleteSessionId = session.id })
             }
             if (visibleSessions.isEmpty()) item { EmptyState(if (showArchived) "No archived sessions" else "No sessions yet", if (showArchived) "Archive sessions to keep your active list focused." else "Create a session to start tracking your solves.") }
         }
@@ -581,14 +583,14 @@ private fun SessionsPage(sessions: List<SessionEntity>, selected: SessionEntity?
             Text("＋   New Session", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
     }
-    editSession?.let { session -> SessionEditDialog(session, onDismiss = { editSession = null }, onSave = { onUpdate(it); editSession = null }) }
+    editSession?.let { session -> SessionEditDialog(session, onDismiss = { editSessionId = null }, onSave = { onUpdate(it); editSessionId = null }) }
     deleteSession?.let { session ->
         AlertDialog(
-            onDismissRequest = { deleteSession = null },
+            onDismissRequest = { deleteSessionId = null },
             title = { Text("Delete session?") },
             text = { Text("${session.name} and all of its solves will be permanently deleted.") },
-            confirmButton = { TextButton(onClick = { onDelete(session.id); deleteSession = null }) { Text("Delete") } },
-            dismissButton = { TextButton(onClick = { deleteSession = null }) { Text("Cancel") } },
+            confirmButton = { TextButton(onClick = { onDelete(session.id); deleteSessionId = null }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { deleteSessionId = null }) { Text("Cancel") } },
         )
     }
 }
@@ -709,12 +711,13 @@ private fun SessionEditDialog(session: SessionEntity, onDismiss: () -> Unit, onS
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<SolveEntity>, scramble: String, scrambleSvg: String?, scrambleLocked: Boolean, running: Boolean, inspecting: Boolean, preparing: Boolean, elapsed: Long, inspectionElapsed: Long, inspectionCountdown: Boolean, phaseSplits: List<Long>, holdTime: Long, hapticsEnabled: Boolean, showStats: Boolean, showScrambleDrawing: Boolean, decimalPlaces: Int, boldTimerDigits: Boolean, timerFontWeight: Int, timerSizeScale: Float, scrambleTextSize: Int, timerFontPreset: String, error: String?, onShowSessions: () -> Unit) {
     val motionEnabled = LocalMotionEnabled.current
-    var showScramble by remember { mutableStateOf(false) }
-    var showScrambleMenu by remember { mutableStateOf(false) }
-    var showEventPicker by remember { mutableStateOf(false) }
-    var showPenaltyOptions by remember { mutableStateOf(false) }
-    var deleteLastSolve by remember { mutableStateOf<SolveEntity?>(null) }
-    var confirmUnlockScramble by remember { mutableStateOf(false) }
+    var showScramble by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var showScrambleMenu by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var showEventPicker by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var showPenaltyOptions by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var deleteLastSolveId by androidx.compose.runtime.saveable.rememberSaveable(session?.id) { mutableStateOf<Long?>(null) }
+    val deleteLastSolve = solves.firstOrNull { it.id == deleteLastSolveId }
+    var confirmUnlockScramble by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
@@ -804,7 +807,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
             if (control && event.type == KeyEventType.KeyDown) {
                 when (event.key) {
                     Key.N -> { if (!scrambleLocked && !running) vm.nextScramble(playCue = true); true }
-                    Key.Backspace, Key.Z -> { deleteLastSolve = solves.firstOrNull(); true }
+                    Key.Backspace, Key.Z -> { deleteLastSolveId = solves.firstOrNull()?.id; true }
                     Key.One -> { solves.firstOrNull()?.let { vm.applyPenalty(it.id, Penalty.NONE) }; true }
                     Key.Two -> { solves.firstOrNull()?.let { vm.applyPenalty(it.id, Penalty.PLUS_TWO) }; true }
                     Key.Three -> { solves.firstOrNull()?.let { vm.applyPenalty(it.id, Penalty.DNF) }; true }
@@ -859,7 +862,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
                     when (swiped) {
                         "down" -> showPenaltyOptions = solves.isNotEmpty()
                         "up" -> showPenaltyOptions = false
-                        "left" -> deleteLastSolve = solves.firstOrNull()
+                        "left" -> deleteLastSolveId = solves.firstOrNull()?.id
                         "right" -> if (!inspecting) { if (scrambleLocked) confirmUnlockScramble = true else vm.nextScramble(playCue = true) }
                     }
                     return@awaitEachGesture
@@ -925,7 +928,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
             TextButton(onClick = { solves.firstOrNull()?.let { vm.applyPenalty(it.id, Penalty.DNF) }; showPenaltyOptions = false }) { Text("DNF") }
         }
     })
-    deleteLastSolve?.let { target -> AlertDialog(onDismissRequest = { deleteLastSolve = null }, title = { Text("Delete last solve?") }, text = { Text("${formatSolve(target)} will be removed from this session.") }, confirmButton = { TextButton(onClick = { vm.deleteSolve(target.id); deleteLastSolve = null }) { Text("Delete") } }, dismissButton = { TextButton(onClick = { deleteLastSolve = null }) { Text("Cancel") } }) }
+    deleteLastSolve?.let { target -> AlertDialog(onDismissRequest = { deleteLastSolveId = null }, title = { Text("Delete last solve?") }, text = { Text("${formatSolve(target)} will be removed from this session.") }, confirmButton = { TextButton(onClick = { vm.deleteSolve(target.id); deleteLastSolveId = null }) { Text("Delete") } }, dismissButton = { TextButton(onClick = { deleteLastSolveId = null }) { Text("Cancel") } }) }
     if (confirmUnlockScramble) AlertDialog(onDismissRequest = { confirmUnlockScramble = false }, title = { Text("Unlock scramble?") }, text = { Text("Unlocking will generate a new scramble.") }, confirmButton = { TextButton(onClick = { vm.toggleScrambleLock(); confirmUnlockScramble = false }) { Text("Unlock") } }, dismissButton = { TextButton(onClick = { confirmUnlockScramble = false }) { Text("Cancel") } })
     if (showEventPicker) AlertDialog(onDismissRequest = { showEventPicker = false }, title = { Text("Choose Puzzle") }, text = {
         LazyColumn { itemsIndexed(CubeEvents.all) { _, event -> ListItem(headlineContent = { Text(event.name) }, leadingContent = { EventIcon(event.id, 32) }, modifier = Modifier.clickable { vm.setPlaygroundEvent(event.id); showEventPicker = false }) } }
@@ -1062,7 +1065,8 @@ private fun MiniStatLine(label: String, value: String?) {
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun SolvesPage(solves: List<SolveEntity>, allSolves: List<SolveEntity>, sessions: List<SessionEntity>, currentSessionId: Long?, vm: TimerViewModel, offerUndo: (String) -> Unit) {
     var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
-    var detailSolve by remember { mutableStateOf<SolveEntity?>(null) }
+    var detailSolveId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Long?>(null) }
+    val detailSolve = allSolves.firstOrNull { it.id == detailSolveId }
     var selectMode by androidx.compose.runtime.saveable.rememberSaveable(currentSessionId) { mutableStateOf(false) }
     var selectedIds by androidx.compose.runtime.saveable.rememberSaveable(
         currentSessionId,
@@ -1074,7 +1078,7 @@ private fun SolvesPage(solves: List<SolveEntity>, allSolves: List<SolveEntity>, 
     var batchMenu by remember { mutableStateOf(false) }
     var moveMenu by remember { mutableStateOf(false) }
     var copyMenu by remember { mutableStateOf(false) }
-    var deleteConfirmation by remember { mutableStateOf(false) }
+    var deleteConfirmation by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var sortMode by androidx.compose.runtime.saveable.rememberSaveable(currentSessionId) { mutableStateOf("Newest first") }
     var sessionFilter by androidx.compose.runtime.saveable.rememberSaveable(currentSessionId) { mutableStateOf(currentSessionId) }
     var sessionFilterMenu by remember { mutableStateOf(false) }
@@ -1191,7 +1195,7 @@ private fun SolvesPage(solves: List<SolveEntity>, allSolves: List<SolveEntity>, 
                         modifier = Modifier.combinedClickable(
                             onClick = {
                                 if (selectMode) selectedIds = if (solve.id in selectedIds) selectedIds - solve.id else selectedIds + solve.id
-                                else detailSolve = solve
+                                else detailSolveId = solve.id
                             },
                             onLongClick = { selectMode = true; selectedIds = selectedIds + solve.id },
                         ),
@@ -1230,13 +1234,13 @@ private fun SolvesPage(solves: List<SolveEntity>, allSolves: List<SolveEntity>, 
         dismissButton = { TextButton(onClick = { deleteConfirmation = false }) { Text("Cancel") } },
     )
     detailSolve?.let { solve ->
-        SolveDetailDialog(solve, vm) { detailSolve = null }
+        SolveDetailDialog(solve, vm) { detailSolveId = null }
     }
 }
 
 @Composable
 private fun SolveDetailDialog(solve: SolveEntity, vm: TimerViewModel, onDismiss: () -> Unit) {
-    var comment by remember(solve.id) { mutableStateOf(solve.comment) }
+    var comment by androidx.compose.runtime.saveable.rememberSaveable(solve.id) { mutableStateOf(solve.comment) }
     val clipboard = LocalClipboardManager.current
     AlertDialog(
         onDismissRequest = { vm.setComment(solve.id, comment); onDismiss() },
