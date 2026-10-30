@@ -2,6 +2,7 @@ package app.trampis.timed.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.util.zip.ZipInputStream
@@ -67,5 +68,26 @@ class SessionExchangeTest {
         assertTrue(xml.contains("note &amp; &lt;check&gt;"))
         assertTrue(xml.contains("R &lt; U"))
         assertTrue(xml.contains("office:value=\"12.345\""))
+    }
+
+    @Test fun backupPreviewValidatesAndCountsBeforeImport() {
+        val backup = SessionExchange.backup(listOf(
+            SessionWithSolves(SessionEntity(name = "Practice", eventId = "333", archived = true), listOf(
+                SolveEntity(sessionId = 1, timeMillis = 12_345, scramble = "R U", createdAt = 1_700_000_000_000),
+            )),
+        ))
+        assertEquals(1, SessionExchange.previewImport(backup, "backup.json").sessions)
+        assertEquals(1, SessionExchange.previewImport(backup, "backup.json").solves)
+        assertEquals("Practice", SessionExchange.parseBackup(backup)?.single()?.name)
+        assertEquals(true, SessionExchange.parseBackup(backup)?.single()?.archived)
+    }
+
+    @Test fun importPreviewRejectsUnsupportedJsonAndMalformedCsvRows() {
+        assertThrows(RuntimeException::class.java) {
+            SessionExchange.previewImport("{\"not\":\"a backup\"}", "bad.json")
+        }
+        assertThrows(RuntimeException::class.java) {
+            SessionExchange.previewImport("Time,Comment,Scramble,Date,Penalty\nnot-a-time,,R U,,none", "bad.csv")
+        }
     }
 }

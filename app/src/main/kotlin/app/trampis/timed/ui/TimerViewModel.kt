@@ -16,6 +16,7 @@ import app.trampis.timed.data.ActiveTimerEntity
 import app.trampis.timed.data.SolveEntity
 import app.trampis.timed.data.SessionExchange
 import app.trampis.timed.data.SessionWithSolves
+import app.trampis.timed.data.SessionImportPreview
 import app.trampis.timed.data.TrampisDatabase
 import app.trampis.timed.R
 import app.trampis.timed.domain.Penalty
@@ -61,12 +62,26 @@ private val StatsMotionKey = booleanPreferencesKey("stats_card_motion")
 private val TimerSizeKey = floatPreferencesKey("timer_size_scale")
 private val ScrambleSizeKey = androidx.datastore.preferences.core.intPreferencesKey("scramble_text_size")
 private val TimerFontKey = androidx.datastore.preferences.core.stringPreferencesKey("timer_font_preset")
+private val ReducedMotionKey = booleanPreferencesKey("reduced_motion")
+private val HighContrastKey = booleanPreferencesKey("high_contrast")
+private val UiFontKey = androidx.datastore.preferences.core.stringPreferencesKey("ui_font")
+private val GradientStyleKey = androidx.datastore.preferences.core.stringPreferencesKey("gradient_style")
+private val CustomAccentKey = androidx.datastore.preferences.core.intPreferencesKey("custom_accent")
+private val CustomGradientStartKey = androidx.datastore.preferences.core.intPreferencesKey("custom_gradient_start")
+private val CustomGradientEndKey = androidx.datastore.preferences.core.intPreferencesKey("custom_gradient_end")
+private val LastBackupKey = androidx.datastore.preferences.core.longPreferencesKey("last_backup_created_at")
 
 class TimerViewModel(application: Application) : AndroidViewModel(application) {
+    private sealed interface UndoRecord {
+        data class Solves(val solves: List<SolveEntity>) : UndoRecord
+        data class Session(val session: SessionEntity, val solves: List<SolveEntity>, val wasCurrent: Boolean) : UndoRecord
+    }
+    private var undoRecord: UndoRecord? = null
     private val dao = TrampisDatabase.get(application).timerDao()
     private val timer = TimerEngine(SystemClock::elapsedRealtimeNanos)
     private val scrambleProvider = ScrambleProvider()
     private val activeRunMutex = Mutex()
+    private val undoMutex = Mutex()
 
     val sessions = dao.observeSessions().stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList(),
@@ -81,6 +96,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     val solves = currentSessionId.flatMapLatest { id ->
         if (id == 0L) flowOf(emptyList<SolveEntity>()) else dao.observeSolves(id)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val allSolves = dao.observeAllSolves().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val isRunning = MutableStateFlow(false)
     val isInspecting = MutableStateFlow(false)
@@ -106,6 +122,14 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     val timerSizeScale = MutableStateFlow(1f)
     val scrambleTextSize = MutableStateFlow(17)
     val timerFontPreset = MutableStateFlow("recursive")
+    val lastBackupAt = MutableStateFlow(0L)
+    val reducedMotion = MutableStateFlow(false)
+    val highContrast = MutableStateFlow(false)
+    val uiFont = MutableStateFlow("system")
+    val gradientStyle = MutableStateFlow("blue")
+    val customAccent = MutableStateFlow(0xFF5278F6.toInt())
+    val customGradientStart = MutableStateFlow(0xFF83A6FF.toInt())
+    val customGradientEnd = MutableStateFlow(0xFF4169E1.toInt())
     val elapsedNanos = MutableStateFlow(0L)
     val inspectionNanos = MutableStateFlow(0L)
     val phaseSplitsNanos = MutableStateFlow<List<Long>>(emptyList())
@@ -145,6 +169,14 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                 timerSizeScale.value = (prefs[TimerSizeKey] ?: 1f).coerceIn(.85f, 1.2f)
                 scrambleTextSize.value = (prefs[ScrambleSizeKey] ?: 17).coerceIn(14, 23)
                 timerFontPreset.value = prefs[TimerFontKey]?.takeIf { it == "recursive" || it == "system" } ?: "recursive"
+                reducedMotion.value = prefs[ReducedMotionKey] ?: false
+                highContrast.value = prefs[HighContrastKey] ?: false
+                uiFont.value = prefs[UiFontKey]?.takeIf { it in setOf("system", "rubik") } ?: "system"
+                gradientStyle.value = prefs[GradientStyleKey]?.takeIf { it in setOf("blue", "accent", "rainbow", "sunset", "ocean", "aurora", "custom") } ?: if (prefs[StaticGradientKey] == false) "rainbow" else "blue"
+                customAccent.value = prefs[CustomAccentKey] ?: 0xFF5278F6.toInt()
+                customGradientStart.value = prefs[CustomGradientStartKey] ?: 0xFF83A6FF.toInt()
+                customGradientEnd.value = prefs[CustomGradientEndKey] ?: 0xFF4169E1.toInt()
+                lastBackupAt.value = prefs[LastBackupKey] ?: 0L
             }
         }
         viewModelScope.launch {
@@ -227,12 +259,47 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) { dao.setPinned(sessionId, pinned) }
     }
 
+    fun setSessionArchived(sessionId: Long, archived: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (archived && currentSessionId.value == sessionId) {
+                val replacement = sessions.value.firstOrNull { it.id != sessionId && !it.archived }
+                val next = replacement ?: run {
+                    val entity = SessionEntity(name = "3×3×3")
+                    val id = dao.addSession(entity)
+                    entity.copy(id = id)
+                }
+                currentSessionId.value = next.id
+                persistSelectedSession(next.id)
+                nextScramble(next)
+            }
+            dao.setArchived(sessionId, archived)
+        }
+    }
+
+    fun moveSessionToTop(sessionId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val current = dao.getSessions().firstOrNull { it.id == sessionId } ?: return@launch
+            val active = dao.getSessions().filter { it.archived == current.archived }
+            val minimum = active.minOfOrNull { it.sortOrder } ?: 0
+            dao.setSortOrder(sessionId, minimum - 1)
+        }
+    }
+
     fun updateSession(session: SessionEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             val updated = session.copy(eventId = CubeEvents.fromId(session.eventId).id)
             dao.updateSession(updated)
             if (currentSessionId.value == session.id) nextScramble(updated)
         }
+    }
+
+    fun duplicateSession(session: SessionEntity) {
+        val baseName = "${session.name} copy"
+        val existing = sessions.value.map { it.name.lowercase() }.toSet()
+        var name = baseName
+        var suffix = 2
+        while (name.lowercase() in existing) { name = "$baseName $suffix"; suffix++ }
+        addSession(name, session.eventId, session.sessionType, session.phaseCount, session.targetMillis)
     }
 
     fun deleteSession(sessionId: Long) {
@@ -250,6 +317,60 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                 nextScramble(remaining.firstOrNull() ?: SessionEntity(id = nextId, name = "3×3×3"))
             }
         }
+    }
+
+    fun deleteSessionWithUndo(sessionId: Long) {
+        viewModelScope.launch(Dispatchers.IO) { undoMutex.withLock {
+            if (isRunning.value && activeSessionId == sessionId) {
+                error.value = "Stop the timer before deleting its session."
+                return@launch
+            }
+            val session = dao.getSessions().firstOrNull { it.id == sessionId } ?: return@launch
+            val sessionSolves = dao.getSolves(sessionId)
+            val wasCurrent = currentSessionId.value == sessionId
+            undoRecord = UndoRecord.Session(session, sessionSolves, wasCurrent)
+            dao.deleteSession(sessionId)
+            val remaining = dao.getSessions()
+            if (wasCurrent) {
+                val next = remaining.firstOrNull() ?: run {
+                    val replacement = SessionEntity(name = "3×3×3")
+                    val id = dao.addSession(replacement)
+                    replacement.copy(id = id)
+                }
+                currentSessionId.value = next.id
+                persistSelectedSession(next.id)
+                nextScramble(next)
+            }
+        } }
+    }
+
+    fun deleteSolvesWithUndo(solveIds: List<Long>) {
+        if (solveIds.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) { undoMutex.withLock {
+            val removed = dao.deleteSolvesReturning(solveIds)
+            if (removed.isNotEmpty()) undoRecord = UndoRecord.Solves(removed)
+        } }
+    }
+
+    fun undoLastDelete() {
+        viewModelScope.launch(Dispatchers.IO) { undoMutex.withLock {
+            when (val record = undoRecord.also { undoRecord = null }) {
+                is UndoRecord.Solves -> dao.addSolves(record.solves)
+                is UndoRecord.Session -> {
+                    dao.restoreSessionWithSolves(record.session, record.solves)
+                    if (record.wasCurrent) {
+                        currentSessionId.value = record.session.id
+                        persistSelectedSession(record.session.id)
+                        nextScramble(record.session)
+                    }
+                }
+                null -> Unit
+            }
+        } }
+    }
+
+    suspend fun previewImport(text: String, filename: String): SessionImportPreview = withContext(Dispatchers.IO) {
+        SessionExchange.previewImport(text, filename)
     }
 
     fun addSession(name: String, eventId: String, sessionType: String = "standard", phaseCount: Int = 2, targetMillis: Long? = null) {
@@ -280,6 +401,12 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
         val all = dao.getSessions().map { session -> SessionWithSolves(session, dao.getSolves(session.id)) }
         SessionExchange.backup(all)
+    }
+
+    fun markBackupCreated() {
+        val now = System.currentTimeMillis()
+        lastBackupAt.value = now
+        viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[LastBackupKey] = now } }
     }
 
     suspend fun exportOds(): ByteArray = withContext(Dispatchers.IO) {
@@ -440,7 +567,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[TimerWeightKey] = normalized } }
     }
     fun setAccentPreset(value: String) {
-        val normalized = value.takeIf { it in setOf("blue", "violet", "mint", "amber") } ?: "blue"
+        val normalized = value.takeIf { it in setOf("blue", "violet", "mint", "amber", "custom") } ?: "blue"
         accentPreset.value = normalized
         viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[AccentPresetKey] = normalized } }
     }
@@ -460,6 +587,33 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         timerFontPreset.value = normalized
         viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[TimerFontKey] = normalized } }
     }
+    fun setReducedMotion(value: Boolean) = updatePreference(ReducedMotionKey, value)
+    fun setHighContrast(value: Boolean) = updatePreference(HighContrastKey, value)
+    fun setUiFont(value: String) {
+        val normalized = value.takeIf { it in setOf("system", "rubik") } ?: "system"
+        uiFont.value = normalized
+        viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[UiFontKey] = normalized } }
+    }
+    fun setGradientStyle(value: String) {
+        val normalized = value.takeIf { it in setOf("blue", "accent", "rainbow", "sunset", "ocean", "aurora", "custom") } ?: "blue"
+        gradientStyle.value = normalized
+        staticGradient.value = normalized == "blue"
+        viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[GradientStyleKey] = normalized; it[StaticGradientKey] = normalized == "blue" } }
+    }
+    fun setCustomAccent(value: Int) {
+        customAccent.value = value
+        viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[CustomAccentKey] = value; it[AccentPresetKey] = "custom" } }
+    }
+    fun setCustomGradientStart(value: Int) {
+        customGradientStart.value = value
+        viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[CustomGradientStartKey] = value; it[GradientStyleKey] = "custom" } }
+        gradientStyle.value = "custom"
+    }
+    fun setCustomGradientEnd(value: Int) {
+        customGradientEnd.value = value
+        viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[CustomGradientEndKey] = value; it[GradientStyleKey] = "custom" } }
+        gradientStyle.value = "custom"
+    }
     fun resetAppearance() {
         viewModelScope.launch { getApplication<Application>().trampisPreferences.edit {
             it.remove(AppearanceOverrideKey); it.remove(DarkModeKey); it.remove(StaticGradientKey)
@@ -469,6 +623,8 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             it.remove(StatsMotionKey)
             it.remove(TimerSizeKey); it.remove(ScrambleSizeKey)
             it.remove(TimerFontKey)
+            it.remove(ReducedMotionKey); it.remove(HighContrastKey); it.remove(UiFontKey)
+            it.remove(GradientStyleKey); it.remove(CustomAccentKey); it.remove(CustomGradientStartKey); it.remove(CustomGradientEndKey)
         } }
     }
     private fun persistSelectedSession(sessionId: Long) {

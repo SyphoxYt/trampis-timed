@@ -14,9 +14,30 @@ android {
         applicationId = "app.trampis.timed"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.6.2"
+        versionCode = 10
+        versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    val releaseKeystore = providers.environmentVariable("TRAMPIS_RELEASE_KEYSTORE").orNull
+    val releaseStorePassword = providers.environmentVariable("TRAMPIS_RELEASE_STORE_PASSWORD").orNull
+    val releaseKeyAlias = providers.environmentVariable("TRAMPIS_RELEASE_KEY_ALIAS").orNull
+    val releaseKeyPassword = providers.environmentVariable("TRAMPIS_RELEASE_KEY_PASSWORD").orNull
+    if (listOf(releaseKeystore, releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }) {
+        signingConfigs.create("production") {
+            storeFile = file(releaseKeystore!!)
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            if (listOf(releaseKeystore, releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }) {
+                signingConfig = signingConfigs.getByName("production")
+            }
+        }
     }
 
     buildFeatures { compose = true }

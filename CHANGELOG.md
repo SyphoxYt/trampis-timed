@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.0 — 2026-10-30
+
+- Added accessibility settings for reduced motion, high contrast, and system/Rubik interface fonts.
+- Added animated color-mode transitions, rainbow and multi-style gradients, and custom accent and chart colors.
+- Restored explicit System/Light/Dark appearance modes and added a Match Accent Stats gradient that follows any selected accent, including custom.
+- Added all-session solve browsing, session filtering, Ao5/Ao12 trend views, and chart-point solve details.
+- Added session archive/restore, duplicate, ordering, backup reminders, and undo for solve/session deletes.
+- Added import review with session/solve counts, format validation, size limits, and strict malformed CSV row handling.
+- Added Room migration 3→4 for session ordering and archived state.
+- Improved stats card layout for compact widths and larger text, and centered content with a tablet width limit.
+- Set Android version code to 10 and version name to 1.0.0.
+
 ## 0.6.2 — 2026-10-30
 
 - Separated Solves sorting and selection controls to prevent overlap; batch actions live in their own overflow menu.

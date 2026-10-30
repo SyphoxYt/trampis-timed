@@ -25,6 +25,8 @@ data class SessionEntity(
     val targetMillis: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val pinned: Boolean = false,
+    val sortOrder: Int = 0,
+    val archived: Boolean = false,
 )
 
 @Entity(
@@ -65,7 +67,7 @@ data class SessionSolveCount(val sessionId: Long, val count: Int)
 
 @Dao
 interface TimerDao {
-    @Query("SELECT * FROM sessions ORDER BY pinned DESC, createdAt ASC")
+    @Query("SELECT * FROM sessions ORDER BY sortOrder ASC, pinned DESC, createdAt ASC")
     fun observeSessions(): Flow<List<SessionEntity>>
 
     @Query("SELECT sessionId, COUNT(*) AS count FROM solves GROUP BY sessionId")
@@ -74,10 +76,13 @@ interface TimerDao {
     @Query("SELECT * FROM solves WHERE sessionId = :sessionId ORDER BY createdAt DESC, id DESC")
     fun observeSolves(sessionId: Long): Flow<List<SolveEntity>>
 
+    @Query("SELECT * FROM solves ORDER BY createdAt DESC, id DESC")
+    fun observeAllSolves(): Flow<List<SolveEntity>>
+
     @Query("SELECT COUNT(*) FROM sessions")
     suspend fun sessionCount(): Int
 
-    @Query("SELECT * FROM sessions ORDER BY pinned DESC, createdAt ASC")
+    @Query("SELECT * FROM sessions ORDER BY sortOrder ASC, pinned DESC, createdAt ASC")
     suspend fun getSessions(): List<SessionEntity>
 
     @Query("SELECT * FROM solves WHERE sessionId = :sessionId ORDER BY createdAt ASC, id ASC")
@@ -131,6 +136,7 @@ interface TimerDao {
         val sessionId = addSession(SessionEntity(
             name = item.name, eventId = item.eventId, sessionType = item.sessionType,
             phaseCount = item.phaseCount, targetMillis = item.targetMillis, createdAt = item.createdAt, pinned = item.pinned,
+            sortOrder = item.sortOrder, archived = item.archived,
         ))
         if (item.solves.isNotEmpty()) addSolves(item.solves.map { solve ->
             SolveEntity(sessionId = sessionId, timeMillis = solve.timeMillis, penalty = solve.penalty,
@@ -154,6 +160,12 @@ interface TimerDao {
     @Query("UPDATE sessions SET pinned = :pinned WHERE id = :sessionId")
     suspend fun setPinned(sessionId: Long, pinned: Boolean)
 
+    @Query("UPDATE sessions SET archived = :archived WHERE id = :sessionId")
+    suspend fun setArchived(sessionId: Long, archived: Boolean)
+
+    @Query("UPDATE sessions SET sortOrder = :sortOrder WHERE id = :sessionId")
+    suspend fun setSortOrder(sessionId: Long, sortOrder: Int)
+
     @Query("DELETE FROM sessions WHERE id = :sessionId")
     suspend fun deleteSession(sessionId: Long)
 
@@ -173,9 +185,22 @@ interface TimerDao {
             addSolve(solve.copy(id = 0, sessionId = sessionId, phaseTimesJson = if (preservePhases) solve.phaseTimesJson else "[]"))
         }
     }
+
+    @androidx.room.Transaction
+    suspend fun deleteSolvesReturning(solveIds: List<Long>): List<SolveEntity> {
+        val removed = solveIds.distinct().mapNotNull { getSolve(it) }
+        deleteSolves(solveIds.distinct())
+        return removed
+    }
+
+    @androidx.room.Transaction
+    suspend fun restoreSessionWithSolves(session: SessionEntity, solves: List<SolveEntity>) {
+        addSession(session)
+        if (solves.isNotEmpty()) addSolves(solves)
+    }
 }
 
-@Database(entities = [SessionEntity::class, SolveEntity::class, ActiveTimerEntity::class], version = 3, exportSchema = true)
+@Database(entities = [SessionEntity::class, SolveEntity::class, ActiveTimerEntity::class], version = 4, exportSchema = true)
 abstract class TrampisDatabase : RoomDatabase() {
     abstract fun timerDao(): TimerDao
 
@@ -187,7 +212,7 @@ abstract class TrampisDatabase : RoomDatabase() {
                 context.applicationContext,
                 TrampisDatabase::class.java,
                 "trampis-timed.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
         }
 
         internal val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
@@ -200,6 +225,13 @@ abstract class TrampisDatabase : RoomDatabase() {
         internal val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS active_timer (id INTEGER NOT NULL, sessionId INTEGER NOT NULL, startElapsedNanos INTEGER NOT NULL, bootCount INTEGER NOT NULL, sessionType TEXT NOT NULL, phaseCount INTEGER NOT NULL, penalty INTEGER NOT NULL, scramble TEXT NOT NULL, phaseSplitsJson TEXT NOT NULL, PRIMARY KEY(id))")
+            }
+        }
+
+        internal val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

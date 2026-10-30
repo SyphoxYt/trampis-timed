@@ -4,5 +4,6 @@
 local.properties
 *.jks
 *.keystore
+hs_err_pid*.log
 .idea/
 .DS_Store
