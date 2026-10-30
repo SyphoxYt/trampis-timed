@@ -91,6 +91,7 @@ import app.trampis.timed.data.SessionEntity
 import app.trampis.timed.data.SolveEntity
 import app.trampis.timed.data.SessionImportPreview
 import app.trampis.timed.domain.CubeEvents
+import app.trampis.timed.domain.InspectionRules
 import app.trampis.timed.domain.Penalty
 import app.trampis.timed.domain.Statistics
 import app.trampis.timed.domain.TimedResult
@@ -771,8 +772,8 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
         }
         val timerColor = when {
             running -> MaterialTheme.colorScheme.onBackground
-            inspecting && inspectionElapsed > 17_000_000_000L -> Color(0xFFE34F53)
-            inspecting && inspectionElapsed >= 15_000_000_000L -> Color(0xFFF28D36)
+            inspecting && !inspectionCountdown && inspectionElapsed >= InspectionRules.DNF_NANOS -> Color(0xFFE34F53)
+            inspecting && !inspectionCountdown && inspectionElapsed >= InspectionRules.PLUS_TWO_NANOS -> Color(0xFFF28D36)
             preparing -> Color(0xFF49A867)
             else -> MaterialTheme.colorScheme.onBackground
         }
@@ -863,7 +864,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
             val timerSize = (maxWidth.value * 0.19f / fontScale * timerSizeScale).coerceIn(34f, 76f).sp
             val timerScale by androidx.compose.animation.core.animateFloatAsState(if (preparing) 1.055f else if (running) .985f else 1f, animationSpec = if (motionEnabled) androidx.compose.animation.core.spring(dampingRatio = .68f, stiffness = 320f) else androidx.compose.animation.core.snap(), label = "timer-scale")
             if (running || preparing || inspecting) {
-                val phase = if (inspecting) (inspectionElapsed / 15_000_000_000f).coerceIn(0f, 1f) else ((elapsed / 1_000_000L) % 10_000L) / 10_000f
+                val phase = if (inspecting) (inspectionElapsed / InspectionRules.COUNTDOWN_NANOS.toFloat()).coerceIn(0f, 1f) else ((elapsed / 1_000_000L) % 10_000L) / 10_000f
                 Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = if (preparing) .75f else .5f }) {
                     val diameter = size.minDimension * .88f
                     val topLeft = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
@@ -874,8 +875,8 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
             }
             Row(Modifier.graphicsLayer { scaleX = timerScale; scaleY = timerScale }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 Text(timeText, fontFamily = if (timerFontPreset == "system") FontFamily.Default else recursiveFontFamily(if (boldTimerDigits) timerFontWeight else 500), fontSize = timerSize, fontWeight = FontWeight.Normal, color = animatedTimerColor, maxLines = 1, softWrap = false)
-                if (inspecting && inspectionElapsed >= 15_000_000_000L) {
-                    Text(if (inspectionElapsed > 17_000_000_000L) " [DNF]" else " [+2]", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = timerColor)
+                if (inspecting && !inspectionCountdown && inspectionElapsed >= InspectionRules.PLUS_TWO_NANOS) {
+                    Text(if (inspectionElapsed >= InspectionRules.DNF_NANOS) " [DNF]" else " [+2]", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = timerColor)
                 }
             }
         }
@@ -920,8 +921,8 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
 private fun countdownValue(elapsedNanos: Long): String {
     val seconds = elapsedNanos / 1_000_000_000L
     return when {
-        seconds >= 15 -> "0"
-        else -> (15 - seconds).coerceAtLeast(0).toString()
+        seconds >= InspectionRules.COUNTDOWN_SECONDS -> "0"
+        else -> (InspectionRules.COUNTDOWN_SECONDS - seconds).toString()
     }
 }
 
@@ -1816,7 +1817,7 @@ private fun MorePage(inspectionEnabled: Boolean, inspectionCountdown: Boolean, h
         SettingGroup("Timer Settings") {
             SettingSwitch("Use Inspection", "Enable the WCA 15 second inspection period.", inspectionEnabled, vm::setInspectionEnabled)
             if (inspectionEnabled) {
-                SettingSwitch("Inspection Counts Down", "Display the remaining inspection seconds.", inspectionCountdown, vm::setInspectionCountdownEnabled)
+                SettingSwitch("Inspection Counts Down", "Count down from 15 seconds, then start the solve timer automatically.", inspectionCountdown, vm::setInspectionCountdownEnabled)
                 SettingSwitch("Inspection Alerts", "Play CubeTime's audio cues at 8 and 12 seconds.", inspectionAlerts, vm::setInspectionAlertsEnabled)
             }
             SettingSwitch("Solve Sounds", "Play short cues for solves, new bests, sessions, and scramble refreshes.", solveSounds, vm::setSolveSoundsEnabled)
