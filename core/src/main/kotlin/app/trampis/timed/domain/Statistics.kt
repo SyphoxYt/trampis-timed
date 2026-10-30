@@ -29,16 +29,16 @@ object Statistics {
         val sorted = current.sortedBy { it.adjustedMillis }
         val bpa = sorted.take(3).takeIf { current.size == 4 }?.let(::meanOrDnf)
         val wpa = sorted.takeLast(3).takeIf { current.size == 4 }?.let(::meanOrDnf)
-        val needed = if (bpa != null && wpa != null && current.size == 4) {
+        val needed = if (bpa != null && wpa != null && current.size == 4 && !bpa.second) {
             when {
-                wpa.first < targetMillis && !wpa.second -> null
+                wpa.first <= targetMillis && !wpa.second -> null
                 bpa.first > targetMillis -> Double.POSITIVE_INFINITY
                 else -> targetMillis * 3.0 - sorted.drop(1).dropLast(1).sumOf { it.adjustedMillis.toDouble() }
             }
         } else null
         return CompSimProgress(groups, bpa?.first, bpa?.second == true, wpa?.first, wpa?.second == true, needed,
             targetGuaranteed = wpa?.let { it.first < targetMillis && !it.second } == true,
-            targetImpossible = bpa?.let { it.first > targetMillis } == true)
+            targetImpossible = bpa?.let { it.second || it.first > targetMillis } == true)
     }
 
     private fun meanOrDnf(results: List<TimedResult>): Pair<Double, Boolean> {
@@ -58,7 +58,7 @@ object Statistics {
     fun trimEachEnd(width: Int): Int = when {
         width < 5 -> 0
         width <= 12 -> 1
-        else -> width / 20
+        else -> maxOf(1, width / 20)
     }
 
     fun average(results: List<TimedResult>): Average? {

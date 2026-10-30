@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.6 — 2026-10-30
+
+- Fixed hold/inspection interaction, ignored scramble refresh and session changes during inspection, and stopped the timer ticker while idle.
+- Serialized active-run checkpoints, prevented stale records from overwriting completed solves, and corrected personal-best checks across session switches.
+- Rounded imported/calculated times and session goals to milliseconds; hardened goal validation and backup/csTimer import handling.
+- Made large bulk solve actions transactionally chunked to stay below SQLite bind limits.
+- Moved import/export file work and scramble drawings off the UI thread; used provider display names and avoided drawing unused scramble previews.
+- Preserved key screen/form state across configuration changes; fixed filtered batch selections, chronological solve numbers, chart metric resets, and session-delete feedback.
+- Fixed comp-sim DNF/target boundaries, matching means across screens, custom average trimming, and calculator validation/count handling.
+- Added working new-best confetti, asynchronous pooled sound playback, improved accent text contrast, and restricted screen-on behavior to the timer page.
+- Updated Android version code to 16 and version name to 1.0.6.
+
 ## 1.0.5 — 2026-10-30
 
 - Made both inspection display modes hand off to solve count-up at the same 15-second monotonic deadline.

@@ -154,6 +154,11 @@ interface TimerDao {
     @Query("UPDATE solves SET penalty = :penalty WHERE id IN (:solveIds)")
     suspend fun setPenalties(solveIds: List<Long>, penalty: Int)
 
+    @androidx.room.Transaction
+    suspend fun setPenaltiesChunked(solveIds: List<Long>, penalty: Int) {
+        solveIds.distinct().chunked(900).forEach { setPenalties(it, penalty) }
+    }
+
     @Query("UPDATE sessions SET eventId = :eventId WHERE id = :sessionId")
     suspend fun setEvent(sessionId: Long, eventId: String)
 
@@ -175,8 +180,18 @@ interface TimerDao {
     @Query("DELETE FROM solves WHERE id IN (:solveIds)")
     suspend fun deleteSolves(solveIds: List<Long>)
 
+    @androidx.room.Transaction
+    suspend fun deleteSolvesChunked(solveIds: List<Long>) {
+        solveIds.distinct().chunked(900).forEach { deleteSolves(it) }
+    }
+
     @Query("UPDATE solves SET sessionId = :sessionId, phaseTimesJson = COALESCE(:phaseTimesJson, phaseTimesJson) WHERE id IN (:solveIds)")
     suspend fun moveSolves(solveIds: List<Long>, sessionId: Long, phaseTimesJson: String?)
+
+    @androidx.room.Transaction
+    suspend fun moveSolvesChunked(solveIds: List<Long>, sessionId: Long, phaseTimesJson: String?) {
+        solveIds.distinct().chunked(900).forEach { moveSolves(it, sessionId, phaseTimesJson) }
+    }
 
     @androidx.room.Transaction
     suspend fun copySolves(solveIds: List<Long>, sessionId: Long, preservePhases: Boolean) {
@@ -189,7 +204,7 @@ interface TimerDao {
     @androidx.room.Transaction
     suspend fun deleteSolvesReturning(solveIds: List<Long>): List<SolveEntity> {
         val removed = solveIds.distinct().mapNotNull { getSolve(it) }
-        deleteSolves(solveIds.distinct())
+        solveIds.distinct().chunked(900).forEach { deleteSolves(it) }
         return removed
     }
 
