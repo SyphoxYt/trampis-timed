@@ -146,8 +146,8 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     private var activePenalty = Penalty.NONE
     private var activeSessionType = "standard"
     private var activePhaseCount = 2
-    private var lastInspectionAlertSecond = 0L
-    private var inspectionAutoStartsSolve = false
+    private var inspection8AlertPlayed = false
+    private var inspection12AlertPlayed = false
     private var scrambleRequestSequence = 0L
     private var recoveryWarning: String? = null
 
@@ -242,20 +242,27 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                 if (timer.isInspecting) {
                     val elapsed = timer.inspectionElapsedNanos()
                     inspectionNanos.value = elapsed
-                    val second = elapsed / 1_000_000_000L
+                    val elapsedSeconds = elapsed / 1_000_000_000L
+                    val countdownMode = inspectionCountdownActive.value
+                    val remainingSeconds = (InspectionRules.COUNTDOWN_SECONDS - elapsedSeconds).coerceAtLeast(0L)
+                    val reached12 = if (countdownMode) remainingSeconds <= 12L else elapsedSeconds >= 12L
+                    val reached8 = if (countdownMode) remainingSeconds <= 8L else elapsedSeconds >= 8L
                     if (inspectionAlertsEnabled.value) {
-                        when {
-                            second >= 12 && lastInspectionAlertSecond < 12 -> playInspectionAlert(R.raw.inspection_12)
-                            second >= 8 && lastInspectionAlertSecond < 8 -> playInspectionAlert(R.raw.inspection_8)
+                        if (reached12 && !inspection12AlertPlayed) {
+                            playInspectionAlert(R.raw.inspection_12)
+                            inspection12AlertPlayed = true
+                        }
+                        if (reached8 && !inspection8AlertPlayed) {
+                            playInspectionAlert(R.raw.inspection_8)
+                            inspection8AlertPlayed = true
                         }
                     }
-                    lastInspectionAlertSecond = second
-                    if (inspectionAutoStartsSolve && elapsed >= InspectionRules.COUNTDOWN_NANOS) {
+                    if (elapsed >= InspectionRules.COUNTDOWN_NANOS) {
                         startFromHold()
-                        // A countdown must not linger in inspection if its solve cannot start.
+                        // Inspection ends at the same fixed deadline in both display modes.
                         if (timer.isInspecting) cancelInspection()
                     }
-                } else lastInspectionAlertSecond = 0L
+                }
                 delay(16)
             }
         }
@@ -451,7 +458,6 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resetTimer() {
         timer.reset()
-        inspectionAutoStartsSolve = false
         inspectionCountdownActive.value = false
         isRunning.value = false
         isInspecting.value = false
@@ -659,18 +665,20 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun shortPress() {
         if (timer.isRunning) return
-        // A light tap during inspection must not restart its clock. Starting the
-        // solve still requires the normal hold-to-ready gesture.
-        if (timer.isInspecting) return
+        // The first tap starts inspection; another tap during inspection starts the run.
+        if (timer.isInspecting) {
+            startFromHold()
+            return
+        }
         if (!inspectionEnabled.value) {
             startFromHold()
             return
         }
         timer.startInspection()
         activePenalty = Penalty.NONE
-        inspectionAutoStartsSolve = inspectionCountdownEnabled.value
-        inspectionCountdownActive.value = inspectionAutoStartsSolve
-        lastInspectionAlertSecond = 0L
+        inspectionCountdownActive.value = inspectionCountdownEnabled.value
+        inspection8AlertPlayed = false
+        inspection12AlertPlayed = false
         isInspecting.value = true
         inspectionNanos.value = 0L
         error.value = null
@@ -701,17 +709,12 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val inspectedNanos = timer.inspectionElapsedNanos()
-        val automaticCountdownHandoff = inspectionAutoStartsSolve && timer.isInspecting && inspectedNanos >= InspectionRules.COUNTDOWN_NANOS
-        activePenalty = when {
-            automaticCountdownHandoff -> Penalty.NONE
-            inspectedNanos >= InspectionRules.DNF_NANOS -> Penalty.DNF
-            inspectedNanos >= InspectionRules.PLUS_TWO_NANOS -> Penalty.PLUS_TWO
-            else -> Penalty.NONE
-        }
+        val automaticInspectionHandoff = timer.isInspecting && inspectedNanos >= InspectionRules.COUNTDOWN_NANOS
+        // Both inspection display styles start the solve at 15 seconds; neither adds a penalty.
+        activePenalty = Penalty.NONE
         val inspectionStart = timer.inspectionStartedAtNanos
-        val exactHandoffNanos = if (automaticCountdownHandoff && inspectionStart != null) inspectionStart + InspectionRules.COUNTDOWN_NANOS else null
+        val exactHandoffNanos = if (automaticInspectionHandoff && inspectionStart != null) inspectionStart + InspectionRules.COUNTDOWN_NANOS else null
         if (exactHandoffNanos != null) timer.startAt(exactHandoffNanos) else timer.start()
-        inspectionAutoStartsSolve = false
         inspectionCountdownActive.value = false
         if (solveSoundsEnabled.value) playTimerSound(R.raw.solve_start)
         activeSessionId = session
@@ -811,7 +814,6 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cancelInspection() {
         timer.reset()
-        inspectionAutoStartsSolve = false
         inspectionCountdownActive.value = false
         isInspecting.value = false
         inspectionNanos.value = 0L
