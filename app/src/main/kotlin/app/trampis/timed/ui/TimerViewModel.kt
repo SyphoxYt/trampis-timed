@@ -54,6 +54,9 @@ private val StaticGradientKey = booleanPreferencesKey("static_gradient")
 private val GraphGlowKey = booleanPreferencesKey("graph_glow")
 private val GraphAnimationKey = booleanPreferencesKey("graph_animation")
 private val ConfettiKey = booleanPreferencesKey("show_confetti")
+private val BoldTimerKey = booleanPreferencesKey("bold_timer_digits")
+private val AccentPresetKey = androidx.datastore.preferences.core.stringPreferencesKey("accent_preset")
+private val StatsMotionKey = booleanPreferencesKey("stats_card_motion")
 
 class TimerViewModel(application: Application) : AndroidViewModel(application) {
     private val dao = TrampisDatabase.get(application).timerDao()
@@ -89,6 +92,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     val graphGlow = MutableStateFlow(true)
     val graphAnimation = MutableStateFlow(true)
     val showConfetti = MutableStateFlow(true)
+    val boldTimerDigits = MutableStateFlow(true)
+    val accentPreset = MutableStateFlow("blue")
+    val statsCardMotion = MutableStateFlow(true)
     val elapsedNanos = MutableStateFlow(0L)
     val inspectionNanos = MutableStateFlow(0L)
     val phaseSplitsNanos = MutableStateFlow<List<Long>>(emptyList())
@@ -121,6 +127,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                 graphGlow.value = prefs[GraphGlowKey] ?: true
                 graphAnimation.value = prefs[GraphAnimationKey] ?: true
                 showConfetti.value = prefs[ConfettiKey] ?: true
+                boldTimerDigits.value = prefs[BoldTimerKey] ?: true
+                accentPreset.value = prefs[AccentPresetKey] ?: "blue"
+                statsCardMotion.value = prefs[StatsMotionKey] ?: true
             }
         }
         viewModelScope.launch {
@@ -395,10 +404,19 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     fun setGraphGlow(value: Boolean) = updatePreference(GraphGlowKey, value)
     fun setGraphAnimation(value: Boolean) = updatePreference(GraphAnimationKey, value)
     fun setShowConfetti(value: Boolean) = updatePreference(ConfettiKey, value)
+    fun setBoldTimerDigits(value: Boolean) = updatePreference(BoldTimerKey, value)
+    fun setAccentPreset(value: String) {
+        val normalized = value.takeIf { it in setOf("blue", "violet", "mint", "amber") } ?: "blue"
+        accentPreset.value = normalized
+        viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[AccentPresetKey] = normalized } }
+    }
+    fun setStatsCardMotion(value: Boolean) = updatePreference(StatsMotionKey, value)
     fun resetAppearance() {
         viewModelScope.launch { getApplication<Application>().trampisPreferences.edit {
             it.remove(AppearanceOverrideKey); it.remove(DarkModeKey); it.remove(StaticGradientKey)
             it.remove(GraphGlowKey); it.remove(GraphAnimationKey); it.remove(ConfettiKey)
+            it.remove(BoldTimerKey); it.remove(AccentPresetKey)
+            it.remove(StatsMotionKey)
         } }
     }
     private fun persistSelectedSession(sessionId: Long) {
