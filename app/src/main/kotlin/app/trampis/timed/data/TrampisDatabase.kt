@@ -121,6 +121,19 @@ interface TimerDao {
         }
     }
 
+    @androidx.room.Transaction
+    suspend fun addBackupSessions(backups: List<BackupSession>): List<Long> = backups.map { item ->
+        val sessionId = addSession(SessionEntity(
+            name = item.name, eventId = item.eventId, sessionType = item.sessionType,
+            phaseCount = item.phaseCount, targetMillis = item.targetMillis, createdAt = item.createdAt, pinned = item.pinned,
+        ))
+        if (item.solves.isNotEmpty()) addSolves(item.solves.map { solve ->
+            SolveEntity(sessionId = sessionId, timeMillis = solve.timeMillis, penalty = solve.penalty,
+                scramble = solve.scramble, createdAt = solve.createdAt, comment = solve.comment, phaseTimesJson = solve.phaseTimesJson)
+        })
+        sessionId
+    }
+
     @Query("UPDATE solves SET penalty = :penalty WHERE id = :solveId")
     suspend fun setPenalty(solveId: Long, penalty: Int)
 
