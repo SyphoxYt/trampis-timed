@@ -75,6 +75,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -927,7 +929,7 @@ private fun SolvesPage(solves: List<SolveEntity>, sessions: List<SessionEntity>,
                 onValueChange = { query = it },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 singleLine = true,
-                placeholder = { Text("Search times and scrambles") },
+                placeholder = { Text("Search solves") },
                 leadingIcon = { Text("⌕", fontSize = 22.sp) },
             )
             val matches = solves.filter {
@@ -941,11 +943,11 @@ private fun SolvesPage(solves: List<SolveEntity>, sessions: List<SessionEntity>,
                 else -> matches.sortedWith(compareByDescending<SolveEntity> { it.createdAt }.thenByDescending { it.id })
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("${filtered.size} solves", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                Text(if (selectMode) "${selectedIds.size} selected · ${filtered.size} solves" else "${filtered.size} solves", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 if (selectMode) {
-                    TextButton(onClick = { selectedIds = if (selectedIds.size == filtered.size) emptySet() else filtered.map { it.id }.toSet() }) { Text(if (selectedIds.size == filtered.size) "Deselect all" else "Select all") }
+                    TextButton(onClick = { selectedIds = if (selectedIds.size == filtered.size) emptySet() else filtered.map { it.id }.toSet() }) { Text(if (selectedIds.size == filtered.size) "Clear" else "All", maxLines = 1) }
                     Box {
-                        TextButton(onClick = { batchMenu = true }, enabled = selectedIds.isNotEmpty()) { Text("Actions") }
+                        TextButton(onClick = { batchMenu = true }, enabled = selectedIds.isNotEmpty(), contentPadding = PaddingValues(horizontal = 8.dp)) { Text("⋮", fontSize = 22.sp, maxLines = 1) }
                         DropdownMenu(expanded = batchMenu, onDismissRequest = { batchMenu = false }) {
                             DropdownMenuItem(text = { Text("No Penalty") }, onClick = { vm.applyPenalty(selectedIds.toList(), Penalty.NONE); selectedIds = emptySet(); batchMenu = false })
                             DropdownMenuItem(text = { Text("+2") }, onClick = { vm.applyPenalty(selectedIds.toList(), Penalty.PLUS_TWO); selectedIds = emptySet(); batchMenu = false })
@@ -958,14 +960,14 @@ private fun SolvesPage(solves: List<SolveEntity>, sessions: List<SessionEntity>,
                     }
                 } else {
                     Box {
-                        TextButton(onClick = { sortMenu = true }) { Text(sortMode) }
+                        TextButton(onClick = { sortMenu = true }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("Sort · ${sortMode.substringBefore(' ')}  ▾", maxLines = 1, softWrap = false) }
                         DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
                             listOf("Newest first", "Oldest first", "Fastest first", "Slowest first").forEach { mode ->
                                 DropdownMenuItem(text = { Text(mode) }, onClick = { sortMode = mode; sortMenu = false })
                             }
                         }
-                        TextButton(onClick = { selectMode = true }) { Text("Select") }
                     }
+                    OutlinedButton(onClick = { selectMode = true }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp), modifier = Modifier.padding(start = 4.dp)) { Text("Select", maxLines = 1) }
                 }
             }
             if (filtered.isEmpty()) EmptyState("No matching solves", "Try a different time or scramble.")
@@ -1749,48 +1751,144 @@ private fun NewSessionDialog(onDismiss: () -> Unit, onCreate: (String, String, S
     var name by remember { mutableStateOf("") }
     var eventId by remember { mutableStateOf("333") }
     var expanded by remember { mutableStateOf(false) }
-    var typeExpanded by remember { mutableStateOf(false) }
     var sessionType by remember { mutableStateOf("standard") }
     var phaseCount by remember { mutableIntStateOf(2) }
     var targetText by remember { mutableStateOf("") }
+    val config = LocalConfiguration.current
+    val compactDialog = config.screenWidthDp < 360
     val event = CubeEvents.fromId(eventId)
-    val sessionTypes = listOf("standard" to "Standard Session", "multiphase" to "Multiphase", "playground" to "Playground", "compsim" to "Competition Simulation", "timerOnly" to "Timer Only", "algtrainer" to "Algorithm Trainer")
-    val selectedType = sessionTypes.first { it.first == sessionType }.second
-    val targetMillis = targetText.toDoubleOrNull()?.let { (it * 1000).toLong() }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (sessionType == "standard") "New Session" else "New $selectedType") }, text = {
-        Column {
-            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Session name") }, singleLine = true)
-            Box {
-                TextButton(onClick = { typeExpanded = true }) { Text("Type: $selectedType  ▾") }
-                DropdownMenu(expanded = typeExpanded, onDismissRequest = { typeExpanded = false }) {
-                    sessionTypes.forEach { (id, label) -> DropdownMenuItem(text = { Text(label) }, onClick = { sessionType = id; typeExpanded = false }) }
-                }
-            }
-            Text(when (sessionType) {
-                "multiphase" -> "Break each solve into phases. Tap the timer to record each phase."
-                "playground" -> "Change the puzzle type at any time within this session."
-                "compsim" -> "Practice a competition format with groups of five solves and a target."
-                "timerOnly" -> "Time solves without generating or saving scrambles."
-                "algtrainer" -> "A session for focused algorithm practice."
-                else -> "A standard session uses one puzzle type for all solves."
-            }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
-            if (sessionType == "multiphase") Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Phases: $phaseCount", modifier = Modifier.weight(1f))
-                TextButton(onClick = { phaseCount = (phaseCount - 1).coerceAtLeast(2) }) { Text("−") }
-                TextButton(onClick = { phaseCount = (phaseCount + 1).coerceAtMost(8) }) { Text("+") }
-            }
-            if (sessionType == "compsim") OutlinedTextField(value = targetText, onValueChange = { targetText = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Target time (seconds)") }, singleLine = true)
-            else if (sessionType != "timerOnly") OutlinedTextField(value = targetText, onValueChange = { targetText = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Average goal (seconds, optional)") }, singleLine = true)
-            if (sessionType != "timerOnly") {
-                Box {
-                    TextButton(onClick = { expanded = true }) { Text("Event: ${event.name}  ▾") }
-                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        CubeEvents.all.forEach { option -> DropdownMenuItem(text = { Text(option.name) }, onClick = { eventId = option.id; expanded = false }) }
+    val sessionTypes = listOf(
+        Triple("standard", "Standard", "One puzzle, one continuous session."),
+        Triple("multiphase", "Multiphase", "Split solves into timed phases."),
+        Triple("playground", "Playground", "Switch puzzle events as you practice."),
+        Triple("compsim", "Comp Sim", "Practice groups of five against a target."),
+        Triple("timerOnly", "Timer Only", "Use the timer without scramble tracking."),
+        Triple("algtrainer", "Alg Trainer", "Keep focused algorithm practice together."),
+    )
+    val selectedType = sessionTypes.first { it.first == sessionType }
+    val targetSeconds = targetText.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }
+    val targetMillis = targetSeconds?.let { (it * 1000).toLong().takeIf { millis -> millis > 0L } }
+    val canCreate = sessionType != "compsim" || targetMillis != null
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = if (compactDialog) 12.dp else 18.dp).widthIn(max = 480.dp)
+                .heightIn(max = (config.screenHeightDp - 48).coerceAtLeast(420).dp),
+            shape = RoundedCornerShape(30.dp), color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp, shadowElevation = 18.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f)),
+        ) {
+            Column(Modifier.padding(if (compactDialog) 14.dp else 18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(if (compactDialog) 44.dp else 52.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .14f), RoundedCornerShape(17.dp)), contentAlignment = Alignment.Center) {
+                        EventIcon(eventId, if (compactDialog) 30 else 34)
                     }
+                    Column(Modifier.weight(1f).padding(start = if (compactDialog) 9.dp else 12.dp)) {
+                        Text(if (compactDialog) "SESSION SETUP" else "CREATE SESSION", style = MaterialTheme.typography.labelSmall, letterSpacing = if (compactDialog) 1.sp else 1.6.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Text(if (compactDialog) "New" else "New Session", style = if (compactDialog) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                    }
+                    IconButton(onClick = onDismiss, modifier = if (compactDialog) Modifier.size(36.dp) else Modifier) { Text("×", fontSize = 25.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+                Spacer(Modifier.height(14.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f))
+                Column(
+                    Modifier.weight(1f, fill = false).heightIn(max = (config.screenHeightDp * .62f).dp)
+                        .verticalScroll(rememberScrollState()).padding(top = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(13.dp),
+                ) {
+                    OutlinedTextField(
+                        value = name, onValueChange = { name = it }, label = { Text("Session name") },
+                        placeholder = { Text(if (sessionType == "timerOnly") "e.g. Warm-up" else "e.g. Evening 3×3") },
+                        singleLine = true, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text("SESSION STYLE", style = MaterialTheme.typography.labelMedium, letterSpacing = 1.2.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        sessionTypes.chunked(2).forEach { rowOptions ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                rowOptions.forEach { option ->
+                                    val tileLabel = if (!compactDialog) option.second else when (option.first) {
+                                        "multiphase" -> "Multi"; "playground" -> "Play"; "compsim" -> "Comp Sim"; "timerOnly" -> "Timer"; "algtrainer" -> "Algs"; else -> "Standard"
+                                    }
+                                    SessionTypeTile(tileLabel, option.first == sessionType, Modifier.weight(1f)) { sessionType = option.first }
+                                }
+                                if (rowOptions.size == 1) Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                    Text(selectedType.third, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (sessionType != "timerOnly") {
+                        Box {
+                            OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp), contentPadding = PaddingValues(horizontal = 13.dp, vertical = 11.dp)) {
+                                EventIcon(eventId, 24)
+                                Text("${event.name}  ·  Change event", modifier = Modifier.weight(1f).padding(start = 10.dp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                Text("⌄", fontWeight = FontWeight.Bold)
+                            }
+                            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                                CubeEvents.all.forEach { option -> DropdownMenuItem(text = { Text(option.name) }, onClick = { eventId = option.id; expanded = false }) }
+                            }
+                        }
+                    }
+                    androidx.compose.animation.AnimatedVisibility(sessionType == "multiphase", enter = fadeIn() + androidx.compose.animation.expandVertically(), exit = fadeOut() + androidx.compose.animation.shrinkVertically()) {
+                        Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .65f), RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Solve phases", fontWeight = FontWeight.Bold)
+                                Text("Split each solve into timed sections", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            IconButton(onClick = { phaseCount = (phaseCount - 1).coerceAtLeast(2) }, enabled = phaseCount > 2) { Text("−", fontSize = 22.sp) }
+                            Text("$phaseCount", fontFamily = recursiveFontFamily(700), fontWeight = FontWeight.Normal, fontSize = 18.sp)
+                            IconButton(onClick = { phaseCount = (phaseCount + 1).coerceAtMost(8) }, enabled = phaseCount < 8) { Text("+", fontSize = 20.sp) }
+                        }
+                    }
+                    androidx.compose.animation.AnimatedVisibility(sessionType != "timerOnly", enter = fadeIn() + androidx.compose.animation.expandVertically(), exit = fadeOut() + androidx.compose.animation.shrinkVertically()) {
+                        OutlinedTextField(
+                            value = targetText,
+                            onValueChange = { input ->
+                                val cleaned = input.filter { it.isDigit() || it == '.' }.take(9)
+                                if (cleaned.count { it == '.' } <= 1) targetText = cleaned
+                            },
+                            label = { Text(if (sessionType == "compsim") "Competition target · seconds" else "Ao5 goal · optional seconds") },
+                            leadingIcon = { Text("◎", color = MaterialTheme.colorScheme.primary) },
+                            supportingText = { Text(if (sessionType == "compsim") "Required to run a competition simulation." else "Track progress toward your average goal.") },
+                            singleLine = true, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primary.copy(alpha = .08f), RoundedCornerShape(15.dp)).padding(horizontal = 13.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("✦", color = MaterialTheme.colorScheme.primary, fontSize = 18.sp)
+                        Text("${if (sessionType == "timerOnly") "Timer only" else event.name}  ·  ${selectedType.second}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f).padding(start = 9.dp), maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        if (targetMillis != null) Text(formatMillis(targetMillis), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onDismiss, modifier = Modifier.weight(1f).heightIn(min = 50.dp)) { Text("Cancel", fontWeight = FontWeight.SemiBold) }
+                    Button(
+                        onClick = { onCreate(name.trim().ifBlank { if (sessionType == "timerOnly") "Timer Only" else event.name }, eventId, sessionType, phaseCount, targetMillis) },
+                        enabled = canCreate, modifier = Modifier.weight(1.35f).heightIn(min = 52.dp), shape = RoundedCornerShape(16.dp),
+                    ) { Text(if (compactDialog) "Create" else "Create Session", fontWeight = FontWeight.Bold, maxLines = 1) }
                 }
             }
         }
-    }, confirmButton = { TextButton(enabled = sessionType != "compsim" || targetMillis != null, onClick = { onCreate(name.ifBlank { if (sessionType == "timerOnly") "Timer Only" else event.name }, eventId, sessionType, phaseCount, targetMillis) }) { Text("Create") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+    }
+}
+
+@Composable
+private fun SessionTypeTile(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val background by androidx.compose.animation.animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
+        androidx.compose.animation.core.tween(180), label = "session-type-$label",
+    )
+    val outline by androidx.compose.animation.animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .75f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = .42f),
+        androidx.compose.animation.core.tween(180), label = "session-type-outline-$label",
+    )
+    Surface(
+        onClick = onClick, modifier = modifier.heightIn(min = 48.dp).border(1.dp, outline, RoundedCornerShape(14.dp)),
+        shape = RoundedCornerShape(14.dp), color = background,
+    ) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (selected) "●" else "○", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
+            Text(label, modifier = Modifier.padding(start = 7.dp), style = MaterialTheme.typography.labelMedium, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
+    }
 }
 
 @Composable
