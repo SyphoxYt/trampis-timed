@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0 — 2026-10-30
+
+- Applied CubeTime's Recursive variable font weights to timer and Stats numbers for a true bold display, with an adjustable timer weight slider.
+- Rebuilt Time Trend with a smooth curve, gradient fill, dashed scale, value labels, selection guide, and animated reveal.
+- Reworked Sessions into pinned and regular groups with current-session highlighting, solve counts, goals, and a consolidated data menu.
+- Kept New Session reachable at the bottom and shortened tab labels on narrow screens.
+- Updated Android version code to 6 and version name to 0.6.0.
+
 ## 0.5.0 — 2026-10-30
 
 - Added 7-day, 30-day, and all-time Stats filters with prior-period performance comparison.

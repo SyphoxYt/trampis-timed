@@ -16,6 +16,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.combinedClickable
@@ -28,6 +29,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -55,6 +57,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -96,6 +101,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlin.math.roundToInt
 import android.widget.Toast
+import androidx.compose.runtime.remember
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -240,6 +246,7 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sessions by vm.sessions.collectAsState()
+    val sessionSolveCounts by vm.sessionSolveCounts.collectAsState()
     val selected by vm.selectedSession.collectAsState()
     val solves by vm.solves.collectAsState()
     val running by vm.isRunning.collectAsState()
@@ -260,6 +267,7 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
     val graphAnimation by vm.graphAnimation.collectAsState()
     val showConfetti by vm.showConfetti.collectAsState()
     val boldTimerDigits by vm.boldTimerDigits.collectAsState()
+    val timerFontWeight by vm.timerFontWeight.collectAsState()
     val statsCardMotion by vm.statsCardMotion.collectAsState()
     val timerSizeScale by vm.timerSizeScale.collectAsState()
     val scrambleTextSize by vm.scrambleTextSize.collectAsState()
@@ -330,13 +338,13 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
                   (fadeOut(androidx.compose.animation.core.tween(160)) + androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(200)) { -it / 24 })
           }, label = "cube-page") { visiblePage ->
             when (visiblePage) {
-                "Timer" -> TimerPage(vm, selected, solves, scramble, scrambleSvg, scrambleLocked, running, inspecting, preparing, elapsed, inspectionElapsed, inspectionCountdown, phaseSplits, holdTime, haptics, timerStats, scrambleDrawing, decimalPlaces, boldTimerDigits, timerSizeScale, scrambleTextSize, timerFontPreset, error) { showSessions = true }
+                "Timer" -> TimerPage(vm, selected, solves, scramble, scrambleSvg, scrambleLocked, running, inspecting, preparing, elapsed, inspectionElapsed, inspectionCountdown, phaseSplits, holdTime, haptics, timerStats, scrambleDrawing, decimalPlaces, boldTimerDigits, timerFontWeight, timerSizeScale, scrambleTextSize, timerFontPreset, error) { showSessions = true }
                 "Solves" -> Column(Modifier.fillMaxSize()) { PageHeading("Times"); SolvesPage(solves, sessions, selected?.id, vm) }
                 "Stats" -> StatsPage(solves, selected, staticGradient, graphGlow, graphAnimation, statsCardMotion) { showSessions = true }
                 "Sessions" -> Column(Modifier.fillMaxSize()) {
-                    PageHeading("Sessions", action = { showNewSession = true })
+                    PageHeading("Sessions")
                     SessionsPage(
-                        sessions, selected,
+                        sessions, selected, sessionSolveCounts,
                         onSelect = { vm.selectSession(it); page = "Timer" },
                         onCreate = { showNewSession = true },
                         onPin = { vm.setSessionPinned(it.id, !it.pinned) },
@@ -350,7 +358,7 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
                     )
                 }
                 "Tools" -> ToolsPage(selectedTool, onBack = { if (selectedTool != null) selectedTool = null else page = "Settings" }, onSelect = { selectedTool = it }, holdTime = holdTime)
-                "Appearance" -> AppearancePage(appearanceOverride, appearanceDark, staticGradient, graphGlow, graphAnimation, showConfetti, boldTimerDigits, statsCardMotion, timerSizeScale, scrambleTextSize, timerFontPreset, vm,
+                "Appearance" -> AppearancePage(appearanceOverride, appearanceDark, staticGradient, graphGlow, graphAnimation, showConfetti, boldTimerDigits, timerFontWeight, statsCardMotion, timerSizeScale, scrambleTextSize, timerFontPreset, vm,
                     onBack = { page = "Settings" })
                 else -> Column(Modifier.fillMaxSize()) { PageHeading("Settings"); MorePage(inspectionEnabled, inspectionCountdown, holdTime, haptics, inspectionAlerts, timerStats, scrambleDrawing, decimalPlaces, vm, { page = "Tools" }, { page = "Appearance" }) }
             }
@@ -364,6 +372,7 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
 @Composable
 private fun CubeTabBar(selected: String, hapticsEnabled: Boolean, onSelect: (String) -> Unit) {
     val haptic = LocalHapticFeedback.current
+    val compactTabs = LocalConfiguration.current.screenWidthDp < 360
     val items = listOf(
         "Timer" to (Icons.Outlined.Timer to Icons.Filled.Timer),
         "Solves" to (Icons.Outlined.History to Icons.Filled.History),
@@ -396,7 +405,8 @@ private fun CubeTabBar(selected: String, hapticsEnabled: Boolean, onSelect: (Str
                     tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(22.dp).graphicsLayer { scaleX = scale; scaleY = scale })
                 androidx.compose.animation.AnimatedVisibility(active, enter = fadeIn() + androidx.compose.animation.expandVertically(), exit = fadeOut() + androidx.compose.animation.shrinkVertically()) {
-                    Text(label, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                    Text(if (compactTabs) when (label) { "Solves" -> "Times"; "Sessions" -> "Sets"; "Settings" -> "Setup"; else -> label } else label,
+                        fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                 }
             }
         }
@@ -412,46 +422,52 @@ private fun PageHeading(title: String, action: (() -> Unit)? = null) {
 }
 
 @Composable
-private fun SessionsPage(sessions: List<SessionEntity>, selected: SessionEntity?, onSelect: (Long) -> Unit, onCreate: () -> Unit, onPin: (SessionEntity) -> Unit, onUpdate: (SessionEntity) -> Unit, onDelete: (Long) -> Unit, onExportCsv: () -> Unit, onExportCsTimer: () -> Unit, onExportOds: () -> Unit, onBackup: () -> Unit, onImport: () -> Unit) {
+private fun SessionsPage(sessions: List<SessionEntity>, selected: SessionEntity?, solveCounts: Map<Long, Int>, onSelect: (Long) -> Unit, onCreate: () -> Unit, onPin: (SessionEntity) -> Unit, onUpdate: (SessionEntity) -> Unit, onDelete: (Long) -> Unit, onExportCsv: () -> Unit, onExportCsTimer: () -> Unit, onExportOds: () -> Unit, onBackup: () -> Unit, onImport: () -> Unit) {
     var editSession by remember { mutableStateOf<SessionEntity?>(null) }
     var deleteSession by remember { mutableStateOf<SessionEntity?>(null) }
-    var menuSessionId by remember { mutableStateOf<Long?>(null) }
-    LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
-        itemsIndexed(sessions, key = { _, session -> session.id }) { _, session ->
-            ListItem(
-                headlineContent = { Text(session.name, fontWeight = FontWeight.Medium) },
-                supportingContent = { Text(buildString {
-                    append(CubeEvents.fromId(session.eventId).name); append(" · "); append(session.sessionType.replaceFirstChar { it.uppercase() })
-                    if (session.sessionType != "compsim" && session.targetMillis != null) append(" · Goal ${formatMillis(session.targetMillis)}")
-                }) },
-                leadingContent = { EventIcon(session.eventId, 35) },
-                trailingContent = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { onPin(session) }) { Text(if (session.pinned) "★" else "☆", color = if (session.pinned) Color(0xFFF2B544) else MaterialTheme.colorScheme.onSurfaceVariant) }
-                        Box {
-                            TextButton(onClick = { menuSessionId = session.id }) { Text("⋮") }
-                            DropdownMenu(expanded = menuSessionId == session.id, onDismissRequest = { menuSessionId = null }) {
-                                DropdownMenuItem(text = { Text("Customize") }, onClick = { editSession = session; menuSessionId = null })
-                                DropdownMenuItem(text = { Text("Delete session") }, onClick = { deleteSession = session; menuSessionId = null })
-                            }
-                        }
-                        if (session.id == selected?.id) Icon(Icons.Filled.Timer, contentDescription = "Current session", tint = MaterialTheme.colorScheme.primary)
-                    }
-                },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).clickable { onSelect(session.id) }.padding(vertical = 2.dp)
-            )
-        }
-        item { TextButton(onClick = onCreate, modifier = Modifier.fillMaxWidth().padding(12.dp)) { Text("＋  New session") } }
-        item {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    TextButton(onClick = onExportCsv, enabled = selected != null) { Text("Export CSV") }
-                    TextButton(onClick = onExportCsTimer, enabled = sessions.isNotEmpty()) { Text("Export csTimer") }
-                }
-                TextButton(onClick = onExportOds, enabled = sessions.isNotEmpty(), modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Export ODS (all sessions)") }
-                TextButton(onClick = onBackup, enabled = sessions.isNotEmpty(), modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Create Full Backup") }
-                TextButton(onClick = onImport, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Import CSV / csTimer / app backup") }
+    var showDataMenu by remember { mutableStateOf(false) }
+    val pinned = remember(sessions) { sessions.filter { it.pinned } }
+    val regular = remember(sessions) { sessions.filterNot { it.pinned } }
+    val totalSolves = solveCounts.values.sum()
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("YOUR PRACTICE", style = MaterialTheme.typography.labelSmall, letterSpacing = 1.6.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Text("${sessions.size} sessions · $totalSolves solves", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
             }
+            Box {
+                OutlinedButton(onClick = { showDataMenu = true }, shape = RoundedCornerShape(16.dp), contentPadding = PaddingValues(horizontal = 13.dp, vertical = 8.dp)) {
+                    Text("Data  ⋯", fontWeight = FontWeight.SemiBold)
+                }
+                DropdownMenu(expanded = showDataMenu, onDismissRequest = { showDataMenu = false }) {
+                    DropdownMenuItem(text = { Text("Export current session · CSV") }, enabled = selected != null, onClick = { showDataMenu = false; onExportCsv() })
+                    DropdownMenuItem(text = { Text("Export all · csTimer") }, enabled = sessions.isNotEmpty(), onClick = { showDataMenu = false; onExportCsTimer() })
+                    DropdownMenuItem(text = { Text("Export all · ODS") }, enabled = sessions.isNotEmpty(), onClick = { showDataMenu = false; onExportOds() })
+                    DropdownMenuItem(text = { Text("Create full backup") }, enabled = sessions.isNotEmpty(), onClick = { showDataMenu = false; onBackup() })
+                    HorizontalDivider()
+                    DropdownMenuItem(text = { Text("Import CSV, csTimer, or backup") }, onClick = { showDataMenu = false; onImport() })
+                }
+            }
+        }
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (pinned.isNotEmpty()) {
+                item(key = "pinned-header") { SessionSectionHeader("PINNED", pinned.size) }
+                itemsIndexed(pinned, key = { _, item -> "pinned-${item.id}" }) { _, session ->
+                    SessionCardRow(session, selected?.id == session.id, solveCounts[session.id] ?: 0,
+                        onSelect = { onSelect(session.id) }, onPin = { onPin(session) },
+                        onCustomize = { editSession = session }, onDelete = { deleteSession = session })
+                }
+            }
+            item(key = "sessions-header") { SessionSectionHeader(if (pinned.isEmpty()) "ALL SESSIONS" else "SESSIONS", regular.size) }
+            itemsIndexed(regular, key = { _, item -> "session-${item.id}" }) { _, session ->
+                SessionCardRow(session, selected?.id == session.id, solveCounts[session.id] ?: 0,
+                    onSelect = { onSelect(session.id) }, onPin = { onPin(session) },
+                    onCustomize = { editSession = session }, onDelete = { deleteSession = session })
+            }
+            if (sessions.isEmpty()) item { EmptyState("No sessions yet", "Create a session to start tracking your solves.") }
+        }
+        Button(onClick = onCreate, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).heightIn(min = 54.dp), shape = RoundedCornerShape(18.dp)) {
+            Text("＋   New Session", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
     }
     editSession?.let { session -> SessionEditDialog(session, onDismiss = { editSession = null }, onSave = { onUpdate(it); editSession = null }) }
@@ -464,6 +480,72 @@ private fun SessionsPage(sessions: List<SessionEntity>, selected: SessionEntity?
             dismissButton = { TextButton(onClick = { deleteSession = null }) { Text("Cancel") } },
         )
     }
+}
+
+@Composable
+private fun SessionSectionHeader(title: String, count: Int) {
+    Row(Modifier.fillMaxWidth().padding(start = 4.dp, top = 5.dp, bottom = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, style = MaterialTheme.typography.labelMedium, letterSpacing = 1.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(8.dp))
+        Text(count.toString(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold,
+            modifier = Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = .12f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp))
+    }
+}
+
+@Composable
+private fun SessionCardRow(session: SessionEntity, selected: Boolean, solveCount: Int, onSelect: () -> Unit, onPin: () -> Unit, onCustomize: () -> Unit, onDelete: () -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val background by androidx.compose.animation.animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .13f) else MaterialTheme.colorScheme.surface,
+        androidx.compose.animation.core.tween(220), label = "session-card-background-${session.id}",
+    )
+    val outline by androidx.compose.animation.animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .62f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = .42f),
+        androidx.compose.animation.core.tween(220), label = "session-card-outline-${session.id}",
+    )
+    Row(Modifier.fillMaxWidth().animateContentSize(androidx.compose.animation.core.spring(dampingRatio = .82f, stiffness = 360f))
+        .background(background, RoundedCornerShape(22.dp)).border(1.dp, outline, RoundedCornerShape(22.dp))
+        .clickable(onClick = onSelect).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.width(4.dp).height(62.dp).background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(4.dp)))
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.size(54.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .84f), RoundedCornerShape(17.dp)), contentAlignment = Alignment.Center) {
+            EventIcon(session.eventId, 38)
+        }
+        Spacer(Modifier.width(11.dp))
+        Column(Modifier.weight(1f).padding(vertical = 2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(session.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                androidx.compose.animation.AnimatedVisibility(selected, enter = fadeIn() + androidx.compose.animation.scaleIn(), exit = fadeOut() + androidx.compose.animation.scaleOut()) {
+                    Text("CURRENT", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 7.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .14f), RoundedCornerShape(7.dp)).padding(horizontal = 6.dp, vertical = 3.dp))
+                }
+            }
+            Text("${CubeEvents.fromId(session.eventId).name}  ·  ${sessionTypeLabel(session)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
+            if (session.sessionType != "compsim" && session.targetMillis != null) Text("AO5 goal · ${formatMillis(session.targetMillis)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 3.dp))
+        }
+        Spacer(Modifier.width(5.dp))
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+            Text(solveCount.toString(), fontFamily = recursiveFontFamily(740), fontSize = 19.sp, fontWeight = FontWeight.Bold, color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, lineHeight = 22.sp)
+            Text(if (solveCount == 1) "solve" else "solves", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Box {
+            IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(36.dp)) { Text("⋮", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(text = { Text("Customize") }, onClick = { menuOpen = false; onCustomize() })
+                DropdownMenuItem(text = { Text(if (session.pinned) "Unpin session" else "Pin session") }, onClick = { menuOpen = false; onPin() })
+                DropdownMenuItem(text = { Text("Delete session", color = MaterialTheme.colorScheme.error) }, onClick = { menuOpen = false; onDelete() })
+            }
+        }
+    }
+}
+
+private fun sessionTypeLabel(session: SessionEntity): String = when (session.sessionType) {
+    "multiphase" -> "MULTIPHASE · ${session.phaseCount} PHASES"
+    "playground" -> "PLAYGROUND"
+    "compsim" -> "COMP SIM"
+    "timerOnly" -> "TIMER ONLY"
+    "algtrainer" -> "ALGORITHM TRAINER"
+    else -> "STANDARD"
 }
 
 @Composable
@@ -510,7 +592,7 @@ private fun SessionEditDialog(session: SessionEntity, onDismiss: () -> Unit, onS
 
 @Composable
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<SolveEntity>, scramble: String, scrambleSvg: String?, scrambleLocked: Boolean, running: Boolean, inspecting: Boolean, preparing: Boolean, elapsed: Long, inspectionElapsed: Long, inspectionCountdown: Boolean, phaseSplits: List<Long>, holdTime: Long, hapticsEnabled: Boolean, showStats: Boolean, showScrambleDrawing: Boolean, decimalPlaces: Int, boldTimerDigits: Boolean, timerSizeScale: Float, scrambleTextSize: Int, timerFontPreset: String, error: String?, onShowSessions: () -> Unit) {
+private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<SolveEntity>, scramble: String, scrambleSvg: String?, scrambleLocked: Boolean, running: Boolean, inspecting: Boolean, preparing: Boolean, elapsed: Long, inspectionElapsed: Long, inspectionCountdown: Boolean, phaseSplits: List<Long>, holdTime: Long, hapticsEnabled: Boolean, showStats: Boolean, showScrambleDrawing: Boolean, decimalPlaces: Int, boldTimerDigits: Boolean, timerFontWeight: Int, timerSizeScale: Float, scrambleTextSize: Int, timerFontPreset: String, error: String?, onShowSessions: () -> Unit) {
     var showScramble by remember { mutableStateOf(false) }
     var showScrambleMenu by remember { mutableStateOf(false) }
     var showEventPicker by remember { mutableStateOf(false) }
@@ -683,7 +765,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
                 }
             }
             Row(Modifier.graphicsLayer { scaleX = timerScale; scaleY = timerScale }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                Text(timeText, fontFamily = if (timerFontPreset == "system") FontFamily.Default else FontFamily(Font(R.font.recursive)), fontSize = timerSize, fontWeight = if (boldTimerDigits) FontWeight.Bold else FontWeight.Medium, color = animatedTimerColor, maxLines = 1, softWrap = false)
+                Text(timeText, fontFamily = if (timerFontPreset == "system") FontFamily.Default else recursiveFontFamily(if (boldTimerDigits) timerFontWeight else 500), fontSize = timerSize, fontWeight = FontWeight.Normal, color = animatedTimerColor, maxLines = 1, softWrap = false)
                 if (inspecting && inspectionElapsed >= 15_000_000_000L) {
                     Text(if (inspectionElapsed >= 17_000_000_000L) " [DNF]" else " [+2]", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = timerColor)
                 }
@@ -1138,7 +1220,7 @@ private fun StatsCard(title: String, values: List<Pair<String, String>>, modifie
                 Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center) {
                     Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     AnimatedContent(value, transitionSpec = { fadeIn(androidx.compose.animation.core.tween(180)) + androidx.compose.animation.slideInVertically { it / 3 } togetherWith fadeOut(androidx.compose.animation.core.tween(100)) }, label = "stat-value") { shown ->
-                        Text(shown, style = MaterialTheme.typography.titleLarge, fontFamily = FontFamily(Font(R.font.recursive)), fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                        Text(shown, style = MaterialTheme.typography.titleLarge, fontFamily = recursiveFontFamily(700), fontWeight = FontWeight.Normal, maxLines = 1, softWrap = false)
                     }
                 }
             }
@@ -1162,14 +1244,14 @@ private fun StatsCard(title: String, value: String, modifier: Modifier = Modifie
             Text(title, style = MaterialTheme.typography.labelLarge, color = if (accent) Color.White.copy(alpha = .85f) else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             if (details.isEmpty()) {
                 AnimatedContent(value, transitionSpec = { fadeIn(androidx.compose.animation.core.tween(180)) + androidx.compose.animation.slideInVertically { it / 3 } togetherWith fadeOut(androidx.compose.animation.core.tween(100)) }, label = "stat-card-value") { shown ->
-                    Text(shown, style = MaterialTheme.typography.headlineMedium, fontFamily = FontFamily(Font(R.font.recursive)), fontWeight = FontWeight.Bold,
+                    Text(shown, style = MaterialTheme.typography.headlineMedium, fontFamily = recursiveFontFamily(700), fontWeight = FontWeight.Normal,
                         color = if (accent) Color.White else MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f).wrapContentHeight(Alignment.Bottom), maxLines = 1, softWrap = false)
                 }
             } else {
-                Text(value, style = MaterialTheme.typography.headlineMedium, fontFamily = FontFamily(Font(R.font.recursive)), fontWeight = FontWeight.Bold,
+                Text(value, style = MaterialTheme.typography.headlineMedium, fontFamily = recursiveFontFamily(700), fontWeight = FontWeight.Normal,
                     color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false)
                 Spacer(Modifier.weight(1f))
-                details.forEach { Text(it, style = MaterialTheme.typography.bodyLarge, fontFamily = FontFamily(Font(R.font.recursive)), color = if (it.startsWith("(")) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface, maxLines = 1) }
+                details.forEach { Text(it, style = MaterialTheme.typography.bodyLarge, fontFamily = recursiveFontFamily(560), color = if (it.startsWith("(")) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface, maxLines = 1) }
             }
         }
     }
@@ -1177,43 +1259,78 @@ private fun StatsCard(title: String, value: String, modifier: Modifier = Modifie
 
 @Composable
 private fun StatsTrendChart(solvesDescending: List<SolveEntity>, glowEnabled: Boolean = true, animationEnabled: Boolean = true) {
-    val values = solvesDescending.asReversed().takeLast(80).mapNotNull { solve ->
-        if (solve.penalty == Penalty.DNF.ordinal) null
-        else solve.timeMillis + if (solve.penalty == Penalty.PLUS_TWO.ordinal) 2_000 else 0
-    }
+    val values = solvesDescending.asReversed().mapNotNull { solve ->
+        if (solve.penalty == Penalty.DNF.ordinal) null else solve.timeMillis + if (solve.penalty == Penalty.PLUS_TWO.ordinal) 2_000 else 0
+    }.takeLast(80)
     var selected by remember(values) { mutableIntStateOf(values.lastIndex) }
     val accent = MaterialTheme.colorScheme.primary
-    val grid = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.22f)
+    val chartSurface = MaterialTheme.colorScheme.surface
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val grid = labelColor.copy(alpha = 0.30f)
     val reveal = remember(values, animationEnabled) { androidx.compose.animation.core.Animatable(if (animationEnabled) 0f else 1f) }
     LaunchedEffect(values, animationEnabled) {
-        if (animationEnabled) reveal.animateTo(1f, androidx.compose.animation.core.tween(650)) else reveal.snapTo(1f)
+        if (animationEnabled) reveal.animateTo(1f, androidx.compose.animation.core.tween(850, easing = androidx.compose.animation.core.FastOutSlowInEasing)) else reveal.snapTo(1f)
     }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).padding(14.dp)) {
-        Text("Time Trend", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-        Text(values.getOrNull(selected)?.let(::formatMillis) ?: "Touch a point to inspect", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
-        Canvas(Modifier.fillMaxWidth().height(150.dp).padding(top = 8.dp).pointerInput(values) {
-            detectTapGestures { offset -> if (values.isNotEmpty()) selected = ((offset.x / size.width) * (values.size - 1)).roundToInt().coerceIn(values.indices) }
-        }) {
-            val left = 10f; val right = size.width - 10f; val top = 8f; val bottom = size.height - 10f
-            for (index in 0..3) {
-                val y = top + (bottom - top) * index / 3f
-                drawLine(grid, Offset(left, y), Offset(right, y), strokeWidth = 1.dp.toPx())
-            }
-            if (values.isNotEmpty()) {
-                val min = values.minOrNull()!!.toFloat()
-                val max = values.maxOrNull()!!.toFloat()
-                val range = (max - min).coerceAtLeast(1f)
-                val points = values.mapIndexed { index, value ->
-                    Offset(
-                        if (values.size == 1) (left + right) / 2 else left + (right - left) * index / (values.size - 1),
-                        bottom - (bottom - top) * ((value - min) / range),
-                    )
+    val selectedValue = values.getOrNull(selected)
+    val rangeMin = values.minOrNull()?.toFloat() ?: 0f
+    val rangeMax = values.maxOrNull()?.toFloat() ?: 1f
+    val spread = (rangeMax - rangeMin).coerceAtLeast(1f)
+    val yMin = (rangeMin - spread * .08f).coerceAtLeast(0f)
+    val yMax = rangeMax + spread * .08f
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp)).border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f), RoundedCornerShape(24.dp)).padding(18.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("TIME TREND", style = MaterialTheme.typography.labelMedium, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold, color = labelColor)
+                AnimatedContent(targetState = selectedValue, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "trend-selected-value") { value ->
+                    Text(value?.let(::formatMillis) ?: "Record solves to see your trend", style = MaterialTheme.typography.headlineSmall, fontFamily = recursiveFontFamily(700), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
                 }
-                val visible = (points.size * reveal.value).toInt().coerceAtLeast(if (points.isNotEmpty()) 1 else 0).coerceAtMost(points.size)
-                val visiblePoints = points.take(visible)
-                if (glowEnabled) visiblePoints.zipWithNext().forEach { (a, b) -> drawLine(accent.copy(alpha = .20f), a, b, strokeWidth = 12.dp.toPx(), cap = StrokeCap.Round) }
-                visiblePoints.zipWithNext().forEach { (a, b) -> drawLine(accent, a, b, strokeWidth = 2.5.dp.toPx(), cap = StrokeCap.Round) }
-                visiblePoints.forEachIndexed { index, point -> drawCircle(if (index == selected) accent else accent.copy(alpha = 0.5f), radius = if (index == selected) 5.dp.toPx() else 2.5.dp.toPx(), center = point) }
+            }
+            Text("${values.size} SOLVES", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = accent,
+                modifier = Modifier.background(accent.copy(alpha = .12f), RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 7.dp))
+        }
+        if (values.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.width(42.dp).height(176.dp), verticalArrangement = Arrangement.SpaceBetween, horizontalAlignment = Alignment.End) {
+                    (0..4).forEach { i ->
+                        val v = yMax - (yMax - yMin) * i / 4f
+                        Text(formatMillis(v.toLong(), 1), style = MaterialTheme.typography.labelSmall, color = labelColor, maxLines = 1)
+                    }
+                }
+                Canvas(Modifier.weight(1f).height(176.dp).padding(start = 8.dp).pointerInput(values) {
+                    detectTapGestures { offset -> if (values.size > 1) selected = ((offset.x / size.width) * (values.size - 1)).roundToInt().coerceIn(values.indices) }
+                }) {
+                    val left = 6f; val right = size.width - 5f; val top = 6f; val bottom = size.height - 7f
+                    val ys = (0..4).map { top + (bottom - top) * it / 4f }
+                    ys.forEach { y -> drawLine(grid, Offset(left, y), Offset(right, y), 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 5.dp.toPx()))) }
+                    drawLine(grid.copy(alpha = .7f), Offset(left, top), Offset(left, bottom), 1.dp.toPx())
+                    val points = values.mapIndexed { index, value -> Offset(if (values.size == 1) (left + right) / 2 else left + (right - left) * index / (values.size - 1), bottom - (bottom - top) * ((value - yMin) / (yMax - yMin).coerceAtLeast(1f))) }
+                    val visible = (points.size * reveal.value).toInt().coerceIn(1, points.size)
+                    val visiblePoints = points.take(visible)
+                    val line = Path().apply {
+                        moveTo(visiblePoints.first().x, visiblePoints.first().y)
+                        for (i in 1 until visiblePoints.size) {
+                            val prev = visiblePoints[i - 1]; val curr = visiblePoints[i]
+                            val midX = (prev.x + curr.x) / 2f
+                            quadraticTo(midX, prev.y, midX, (prev.y + curr.y) / 2f)
+                            if (i == visiblePoints.lastIndex) quadraticTo(midX, curr.y, curr.x, curr.y)
+                        }
+                    }
+                    val area = Path().apply { addPath(line); lineTo(visiblePoints.last().x, bottom); lineTo(visiblePoints.first().x, bottom); close() }
+                    drawPath(area, Brush.verticalGradient(listOf(accent.copy(alpha = .25f), accent.copy(alpha = .015f)), top, bottom))
+                    if (glowEnabled) drawPath(line, accent.copy(alpha = .24f), style = Stroke(width = 11.dp.toPx(), cap = StrokeCap.Round))
+                    drawPath(line, accent, style = Stroke(width = 2.8.dp.toPx(), cap = StrokeCap.Round))
+                    val focus = points.getOrNull(selected)
+                    if (focus != null && selected < visible) {
+                        drawLine(accent.copy(alpha = .55f), Offset(focus.x, top), Offset(focus.x, bottom), 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx())))
+                        drawCircle(accent.copy(alpha = .2f), 10.dp.toPx(), focus)
+                        drawCircle(accent, 4.5.dp.toPx(), focus)
+                        drawCircle(chartSurface, 1.8.dp.toPx(), focus)
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(start = 50.dp, top = 7.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("OLDER", style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp, color = labelColor)
+                Text("NEWER", style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp, color = labelColor)
             }
         }
     }
@@ -1532,7 +1649,7 @@ private fun MorePage(inspectionEnabled: Boolean, inspectionCountdown: Boolean, h
 }
 
 @Composable
-private fun AppearancePage(override: Boolean, dark: Boolean, staticGradient: Boolean, graphGlow: Boolean, graphAnimation: Boolean, confetti: Boolean, boldTimerDigits: Boolean, statsCardMotion: Boolean, timerSizeScale: Float, scrambleTextSize: Int, timerFontPreset: String, vm: TimerViewModel, onBack: () -> Unit) {
+private fun AppearancePage(override: Boolean, dark: Boolean, staticGradient: Boolean, graphGlow: Boolean, graphAnimation: Boolean, confetti: Boolean, boldTimerDigits: Boolean, timerFontWeight: Int, statsCardMotion: Boolean, timerSizeScale: Float, scrambleTextSize: Int, timerFontPreset: String, vm: TimerViewModel, onBack: () -> Unit) {
     var showReset by remember { mutableStateOf(false) }
     val currentAccent by vm.accentPreset.collectAsState()
     Column(Modifier.fillMaxSize()) {
@@ -1579,12 +1696,14 @@ private fun AppearancePage(override: Boolean, dark: Boolean, staticGradient: Boo
                 SettingSwitch("Bold Timer Digits", "Use a stronger, clearer weight for the main timer.", boldTimerDigits, vm::setBoldTimerDigits)
                 Text("Timer Typeface", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 14.dp, top = 8.dp))
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = timerFontPreset == "recursive", onClick = { vm.setTimerFontPreset("recursive") }, label = { Text("Digital") })
+                    FilterChip(selected = timerFontPreset == "recursive", onClick = { vm.setTimerFontPreset("recursive") }, label = { Text("Recursive") })
                     FilterChip(selected = timerFontPreset == "system", onClick = { vm.setTimerFontPreset("system") }, label = { Text("System") })
                 }
-                Text("00.000", fontFamily = if (timerFontPreset == "system") FontFamily.Default else FontFamily(Font(R.font.recursive)), fontSize = 34.sp,
-                    fontWeight = if (boldTimerDigits) FontWeight.Bold else FontWeight.Medium, color = MaterialTheme.colorScheme.primary,
+                Text("00.000", fontFamily = if (timerFontPreset == "system") FontFamily.Default else recursiveFontFamily(if (boldTimerDigits) timerFontWeight else 500), fontSize = 34.sp,
+                    fontWeight = FontWeight.Normal, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 12.dp))
+                Text("Font Weight · $timerFontWeight", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 14.dp))
+                Slider(value = timerFontWeight.toFloat(), onValueChange = { vm.setTimerFontWeight(it.roundToInt()) }, valueRange = 500f..900f, steps = 7, enabled = boldTimerDigits, modifier = Modifier.padding(horizontal = 12.dp))
                 Text("Timer Size · ${(timerSizeScale * 100).roundToInt()}%", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 14.dp))
                 Slider(value = timerSizeScale, onValueChange = vm::setTimerSizeScale, valueRange = .85f..1.2f, steps = 6, modifier = Modifier.padding(horizontal = 12.dp))
                 Text("Scramble Size · ${scrambleTextSize}sp", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 14.dp))
@@ -1682,6 +1801,19 @@ private fun formatTime(nanos: Long, dp: Int = 3): String = formatMillis(nanos / 
 private fun safeFileName(value: String): String = value.filter { it.isLetterOrDigit() || it == '-' || it == '_' || it == ' ' }.trim().replace(' ', '_').ifBlank { "Session" }
 private fun formatDate(epochMillis: Long): String = java.text.SimpleDateFormat("MMM d, yyyy · h:mm a", java.util.Locale.getDefault()).format(java.util.Date(epochMillis))
 private fun formatSolve(solve: SolveEntity): String = when (solve.penalty) { Penalty.DNF.ordinal -> "DNF"; Penalty.PLUS_TWO.ordinal -> "${formatMillis(solve.timeMillis + 2_000)}+"; else -> formatMillis(solve.timeMillis) }
+@Composable
+private fun recursiveFontFamily(weight: Int): FontFamily {
+    val context = LocalContext.current
+    val typeface = remember(weight) {
+        runCatching {
+            android.graphics.Typeface.Builder(context.assets, "fonts/recursive.ttf")
+                .setFontVariationSettings("'wght' ${weight.coerceIn(300, 1000)}, 'CASL' 0, 'CRSV' 0")
+                .build()
+        }.getOrElse { android.graphics.Typeface.create("sans-serif-monospace", android.graphics.Typeface.NORMAL) }
+    }
+    return remember(typeface) { FontFamily(typeface) }
+}
+
 private fun formatMillis(millis: Long, dp: Int = 3): String {
     val precision = dp.coerceIn(0, 3)
     val factor = when (precision) { 0 -> 1000L; 1 -> 100L; 2 -> 10L; else -> 1L }

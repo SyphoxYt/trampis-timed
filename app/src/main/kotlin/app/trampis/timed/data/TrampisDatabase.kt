@@ -61,10 +61,15 @@ data class ActiveTimerEntity(
     val phaseSplitsJson: String = "[]",
 )
 
+data class SessionSolveCount(val sessionId: Long, val count: Int)
+
 @Dao
 interface TimerDao {
     @Query("SELECT * FROM sessions ORDER BY pinned DESC, createdAt ASC")
     fun observeSessions(): Flow<List<SessionEntity>>
+
+    @Query("SELECT sessionId, COUNT(*) AS count FROM solves GROUP BY sessionId")
+    fun observeSessionSolveCounts(): Flow<List<SessionSolveCount>>
 
     @Query("SELECT * FROM solves WHERE sessionId = :sessionId ORDER BY createdAt DESC, id DESC")
     fun observeSolves(sessionId: Long): Flow<List<SolveEntity>>

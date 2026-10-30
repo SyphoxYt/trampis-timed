@@ -2,9 +2,9 @@
 
 Trampis Timed is the Android continuation of CubeTime, ported from the original project to Kotlin and Jetpack Compose.
 
-## Version 0.5.0
+## Version 0.6.0
 
-Version 0.5.0 expands Stats with all-time, 30-day, and 7-day views, a comparison to the prior period, personal records, and optional Ao5 session goals. Appearance controls now adjust timer size, scramble size, timer typeface and weight, accent color, graph/card motion, and haptics. Sessions can define average goals and show progress in Stats. Full JSON backups preserve session settings, solve comments, penalties, timestamps, scrambles, and phase splits; they can be imported alongside CSV/csTimer formats. Timer session context is clearer, and a one-tap next-scramble action is available. Edge-to-edge system bar contrast and compact layouts have also been refined.
+Version 0.6.0 strengthens the timer and Stats typography with CubeTime's Recursive variable font and an adjustable timer weight slider, adds a smoother and more readable Time Trend, and gives Sessions pinned and regular groups, per-session solve counts, active-session highlighting, and a consolidated export/import menu. On narrow screens the tab labels shorten to preserve their layout. It also includes the 0.5.0 additions: all-time, 30-day, and 7-day Stats views, prior-period comparison, personal records, optional Ao5 session goals, full JSON backups, adjustable timer size and typeface, accent colors, chart/card motion, and haptics.
 
 The app includes a monotonic-clock timer with process-death recovery, inspection and hold-to-start, Room persistence, TNoodle scramble generation and SVG previews, named/customizable sessions, solve search/sort/details/comments/penalties, batch solve selection/move/copy/delete, rolling statistics, partial Competition Simulation summaries, Timer Only, Scramble Only, Scramble Generator, and Calculator tools. See `docs/PORTING_STATUS.md` for remaining source-to-Android gaps.
 

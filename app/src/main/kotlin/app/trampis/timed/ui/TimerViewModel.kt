@@ -55,6 +55,7 @@ private val GraphGlowKey = booleanPreferencesKey("graph_glow")
 private val GraphAnimationKey = booleanPreferencesKey("graph_animation")
 private val ConfettiKey = booleanPreferencesKey("show_confetti")
 private val BoldTimerKey = booleanPreferencesKey("bold_timer_digits")
+private val TimerWeightKey = androidx.datastore.preferences.core.intPreferencesKey("timer_font_weight")
 private val AccentPresetKey = androidx.datastore.preferences.core.stringPreferencesKey("accent_preset")
 private val StatsMotionKey = booleanPreferencesKey("stats_card_motion")
 private val TimerSizeKey = floatPreferencesKey("timer_size_scale")
@@ -69,6 +70,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     val sessions = dao.observeSessions().stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList(),
+    )
+    val sessionSolveCounts = dao.observeSessionSolveCounts().map { counts -> counts.associate { it.sessionId to it.count } }.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap(),
     )
     private val currentSessionId = MutableStateFlow(0L)
     val selectedSession = combine(sessions, currentSessionId) { list, selectedId ->
@@ -96,6 +100,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     val graphAnimation = MutableStateFlow(true)
     val showConfetti = MutableStateFlow(true)
     val boldTimerDigits = MutableStateFlow(true)
+    val timerFontWeight = MutableStateFlow(740)
     val accentPreset = MutableStateFlow("blue")
     val statsCardMotion = MutableStateFlow(true)
     val timerSizeScale = MutableStateFlow(1f)
@@ -134,6 +139,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                 graphAnimation.value = prefs[GraphAnimationKey] ?: true
                 showConfetti.value = prefs[ConfettiKey] ?: true
                 boldTimerDigits.value = prefs[BoldTimerKey] ?: true
+                timerFontWeight.value = (prefs[TimerWeightKey] ?: 740).coerceIn(500, 900)
                 accentPreset.value = prefs[AccentPresetKey] ?: "blue"
                 statsCardMotion.value = prefs[StatsMotionKey] ?: true
                 timerSizeScale.value = (prefs[TimerSizeKey] ?: 1f).coerceIn(.85f, 1.2f)
@@ -428,6 +434,11 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     fun setGraphAnimation(value: Boolean) = updatePreference(GraphAnimationKey, value)
     fun setShowConfetti(value: Boolean) = updatePreference(ConfettiKey, value)
     fun setBoldTimerDigits(value: Boolean) = updatePreference(BoldTimerKey, value)
+    fun setTimerFontWeight(value: Int) {
+        val normalized = value.coerceIn(500, 900)
+        timerFontWeight.value = normalized
+        viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[TimerWeightKey] = normalized } }
+    }
     fun setAccentPreset(value: String) {
         val normalized = value.takeIf { it in setOf("blue", "violet", "mint", "amber") } ?: "blue"
         accentPreset.value = normalized
@@ -454,6 +465,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             it.remove(AppearanceOverrideKey); it.remove(DarkModeKey); it.remove(StaticGradientKey)
             it.remove(GraphGlowKey); it.remove(GraphAnimationKey); it.remove(ConfettiKey)
             it.remove(BoldTimerKey); it.remove(AccentPresetKey)
+            it.remove(TimerWeightKey)
             it.remove(StatsMotionKey)
             it.remove(TimerSizeKey); it.remove(ScrambleSizeKey)
             it.remove(TimerFontKey)
