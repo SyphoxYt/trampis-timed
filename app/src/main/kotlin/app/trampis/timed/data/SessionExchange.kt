@@ -155,7 +155,8 @@ object SessionExchange {
                     add(result)
                     add(solve.scramble)
                     add(solve.comment)
-                    add((solve.createdAt / 1000L).toInt())
+                    // Preserve the full epoch-seconds value; Int timestamps overflow in 2038.
+                    add(solve.createdAt / 1000L)
                 }
                 entries.add(entry)
             }
