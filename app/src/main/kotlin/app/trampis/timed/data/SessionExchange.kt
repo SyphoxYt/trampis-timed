@@ -14,6 +14,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 data class SessionWithSolves(val session: SessionEntity, val solves: List<SolveEntity>)
+data class SessionImportPreview(val format: String, val sessions: Int, val solves: Int, val names: List<String>)
 
 /** CSV and csTimer formats used by CubeTime, with tolerant import for standard csTimer exports. */
 object SessionExchange {
@@ -27,6 +28,7 @@ object SessionExchange {
                 name = item.session.name, eventId = item.session.eventId, sessionType = item.session.sessionType,
                 phaseCount = item.session.phaseCount, targetMillis = item.session.targetMillis,
                 createdAt = item.session.createdAt, pinned = item.session.pinned,
+                sortOrder = item.session.sortOrder, archived = item.session.archived,
                 solves = item.solves.map { solve -> BackupSolve(solve.timeMillis, solve.penalty, solve.scramble, solve.createdAt, solve.comment, solve.phaseTimesJson) },
             )
         }),
@@ -37,8 +39,30 @@ object SessionExchange {
         if (root.get("format")?.asString != BACKUP_FORMAT || root.get("version")?.asInt != 1) return null
         val backup = com.google.gson.Gson().fromJson(root, TrampisBackup::class.java)
         require(backup.sessions.isNotEmpty()) { "The backup contains no sessions." }
+        require(backup.sessions.size <= 500) { "The backup has too many sessions." }
+        val events = app.trampis.timed.domain.CubeEvents.all.map { it.id }.toSet()
+        val types = setOf("standard", "multiphase", "playground", "compsim", "timerOnly", "algtrainer")
+        require(backup.sessions.all { session ->
+            session.name.isNotBlank() && session.name.length <= 120 && session.eventId in events &&
+                session.sessionType in types && session.phaseCount in 2..8 && session.createdAt > 0L &&
+                (session.targetMillis == null || session.targetMillis > 0L) && session.solves.size <= 100_000 &&
+            session.sortOrder in -1_000_000..1_000_000 && session.solves.all { solve -> solve.timeMillis >= 0L && solve.penalty in 0..2 && solve.createdAt > 0L && solve.scramble.length <= 20_000 && solve.comment.length <= 4_000 && solve.phaseTimesJson.length <= 4_000 }
+        }) { "The backup contains invalid session or solve data." }
         backup.sessions
     }.getOrNull()
+
+    fun previewImport(text: String, suggestedName: String): SessionImportPreview {
+        require(text.length <= 20_000_000) { "The selected file is larger than the 20 MB import limit." }
+        val backup = parseBackup(text)
+        if (backup != null) return SessionImportPreview("Trampis backup", backup.size, backup.sumOf { it.solves.size }, backup.take(5).map { it.name })
+        require(!text.trimStart('\uFEFF', ' ', '\n', '\r', '\t').startsWith("{")) { "This JSON file is not a supported Trampis backup or csTimer export." }
+        val parsed = parse(text, suggestedName)
+        require(parsed.isNotEmpty()) { "The file contains no sessions." }
+        require(parsed.size <= 500 && parsed.sumOf { it.solves.size } <= 100_000) { "The import exceeds the supported session or solve limit." }
+        require(parsed.all { session -> session.name.isNotBlank() && session.solves.all { it.timeMillis >= 0L && it.penalty in 0..2 } }) { "The import contains invalid session or solve data." }
+        val format = if (text.trimStart().startsWith("{")) "csTimer" else "CSV"
+        return SessionImportPreview(format, parsed.size, parsed.sumOf { it.solves.size }, parsed.take(5).map { it.name })
+    }
 
     /** CubeTime-compatible OpenDocument workbook: one sheet per selected session. */
     fun ods(sessions: List<SessionWithSolves>): ByteArray {
@@ -163,14 +187,17 @@ object SessionExchange {
         val dateCol = header.indexOf("date")
         val penaltyCol = header.indexOf("penalty")
         require(timeCol >= 0 && scrambleCol >= 0) { "CSV needs Time and Scramble columns." }
-        val solves = rows.drop(1).filter { it.any(String::isNotBlank) }.mapIndexedNotNull { index, row ->
+        val solves = rows.drop(1).filter { it.any(String::isNotBlank) }.mapIndexed { index, row ->
             fun col(i: Int): String = row.getOrNull(i).orEmpty()
-            val seconds = col(timeCol).trim().toDoubleOrNull() ?: return@mapIndexedNotNull null
-            require(seconds >= 0.0) { "CSV contains a negative solve time on row ${index + 2}." }
+            val seconds = col(timeCol).trim().toDoubleOrNull()
+                ?: error("CSV contains an invalid solve time on row ${index + 2}.")
+            require(seconds.isFinite() && seconds >= 0.0) { "CSV contains an invalid solve time on row ${index + 2}." }
+            require(col(scrambleCol).length <= 20_000 && col(commentCol).length <= 4_000) { "CSV text fields are too long on row ${index + 2}." }
             val penalty = when (col(penaltyCol).trim().lowercase()) {
                 "+2", "plustwo", "2000" -> 1
                 "dnf", "-1" -> 2
-                else -> 0
+                "", "none", "0" -> 0
+                else -> error("CSV contains an unsupported penalty on row ${index + 2}.")
             }
             ImportedSolve(
                 timeMillis = (seconds * 1000.0).toLong(),
@@ -275,7 +302,7 @@ object SessionExchange {
 }
 
 data class TrampisBackup(val format: String, val version: Int, val sessions: List<BackupSession>)
-data class BackupSession(val name: String, val eventId: String, val sessionType: String, val phaseCount: Int, val targetMillis: Long?, val createdAt: Long, val pinned: Boolean, val solves: List<BackupSolve>)
+data class BackupSession(val name: String, val eventId: String, val sessionType: String, val phaseCount: Int, val targetMillis: Long?, val createdAt: Long, val pinned: Boolean, val solves: List<BackupSolve>, val sortOrder: Int = 0, val archived: Boolean = false)
 data class BackupSolve(val timeMillis: Long, val penalty: Int, val scramble: String, val createdAt: Long, val comment: String, val phaseTimesJson: String)
 data class ImportedSession(val name: String, val eventId: String, val solves: List<ImportedSolve>)
 data class ImportedSolve(val timeMillis: Long, val penalty: Int, val scramble: String, val comment: String, val createdAt: Long)
