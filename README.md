@@ -2,9 +2,15 @@
 
 Trampis Timed is the Android continuation of CubeTime, ported from the original project to Kotlin and Jetpack Compose.
 
+## Version 1.0.6
+
+**Downloads:** [Signed Android APK](https://github.com/SyphoxYt/trampis-timed/releases/download/v1.0.6/Trampis-Timed-v1.0.6.apk) · [Source archive](https://github.com/SyphoxYt/trampis-timed/releases/download/v1.0.6/Trampis-Timed-v1.0.6-source.zip) · [GitHub release notes](https://github.com/SyphoxYt/trampis-timed/releases/tag/v1.0.6)
+
+This reliability update fixes timer hold/inspection interactions, keeps the inspected scramble stable, prevents stale timer saves, and lets large batch edits stay within SQLite limits. It also corrects millisecond rounding, session goals, competition simulation with DNFs, solve numbering and filtered selection, import/export I/O and backup validation, plus state restoration for the selected page and active forms/dialogs. Stats means and target boundaries now agree, chart metric selection persists, confetti works, sound playback uses a shared pool, and scramble drawings render away from the UI thread. The release is signed with the existing Trampis Timed Android signing key.
+
 ## Version 1.0.5
 
-Both inspection display modes now start the solve timer at 15 seconds. A tap during inspection starts the solve immediately. The display preference only chooses whether inspection shows remaining or elapsed seconds; spoken 8/12-second cues follow that display, and inspection time no longer applies +2 or DNF automatically.
+Both inspection display modes start the solve timer at 15 seconds. A tap during inspection starts the solve immediately. The display preference only chooses whether inspection shows remaining or elapsed seconds; spoken 8/12-second cues follow that display, and inspection time no longer applies +2 or DNF automatically.
 
 ## Version 1.0.4
 
