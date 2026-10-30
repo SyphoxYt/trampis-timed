@@ -3,6 +3,14 @@ package app.trampis.timed.domain
 /** The timer reads a monotonic clock; display refreshes never determine recorded time. */
 enum class TimerMode { IDLE, INSPECTING, RUNNING, STOPPED }
 
+/** Shared inspection thresholds keep countdown, visual penalties, and solve handoff in sync. */
+object InspectionRules {
+    const val COUNTDOWN_SECONDS = 15L
+    const val COUNTDOWN_NANOS = COUNTDOWN_SECONDS * 1_000_000_000L
+    const val PLUS_TWO_NANOS = COUNTDOWN_NANOS
+    const val DNF_NANOS = 17_000_000_000L
+}
+
 class TimerEngine(private val nowNanos: () -> Long) {
     var mode: TimerMode = TimerMode.IDLE
         private set
@@ -29,8 +37,15 @@ class TimerEngine(private val nowNanos: () -> Long) {
     } else 0L
 
     fun start() {
+        startAt(nowNanos())
+    }
+
+    /** Starts at a monotonic timestamp so scheduled handoffs do not accumulate frame delay. */
+    fun startAt(startedAtNanos: Long) {
         if (isRunning) return
-        startedAtNanos = nowNanos()
+        val now = nowNanos()
+        require(startedAtNanos >= 0L && startedAtNanos <= now) { "Timer start timestamp is not valid for this device boot." }
+        this.startedAtNanos = startedAtNanos
         inspectionStartedAtNanos = null
         lastDurationNanos = 0L
         mode = TimerMode.RUNNING

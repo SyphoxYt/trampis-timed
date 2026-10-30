@@ -23,6 +23,7 @@ import app.trampis.timed.domain.Penalty
 import app.trampis.timed.domain.CubeEvents
 import app.trampis.timed.domain.ScrambleProvider
 import app.trampis.timed.domain.TimerEngine
+import app.trampis.timed.domain.InspectionRules
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -145,6 +146,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     private var activeSessionType = "standard"
     private var activePhaseCount = 2
     private var lastInspectionAlertSecond = 0L
+    private var inspectionAutoStartsSolve = false
     private var recoveryWarning: String? = null
 
     init {
@@ -246,6 +248,11 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                     lastInspectionAlertSecond = second
+                    if (inspectionAutoStartsSolve && elapsed >= InspectionRules.COUNTDOWN_NANOS) {
+                        startFromHold()
+                        // A countdown must not linger in inspection if its solve cannot start.
+                        if (timer.isInspecting) cancelInspection()
+                    }
                 } else lastInspectionAlertSecond = 0L
                 delay(16)
             }
@@ -442,6 +449,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resetTimer() {
         timer.reset()
+        inspectionAutoStartsSolve = false
         isRunning.value = false
         isInspecting.value = false
         isPreparing.value = false
@@ -650,6 +658,8 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         timer.startInspection()
+        activePenalty = Penalty.NONE
+        inspectionAutoStartsSolve = inspectionCountdownEnabled.value
         lastInspectionAlertSecond = 0L
         isInspecting.value = true
         inspectionNanos.value = 0L
@@ -681,12 +691,17 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val inspectedNanos = timer.inspectionElapsedNanos()
+        val automaticCountdownHandoff = inspectionAutoStartsSolve && timer.isInspecting && inspectedNanos >= InspectionRules.COUNTDOWN_NANOS
         activePenalty = when {
-            inspectedNanos > 17_000_000_000L -> Penalty.DNF
-            inspectedNanos >= 15_000_000_000L -> Penalty.PLUS_TWO
+            automaticCountdownHandoff -> Penalty.NONE
+            inspectedNanos >= InspectionRules.DNF_NANOS -> Penalty.DNF
+            inspectedNanos >= InspectionRules.PLUS_TWO_NANOS -> Penalty.PLUS_TWO
             else -> Penalty.NONE
         }
-        timer.start()
+        val inspectionStart = timer.inspectionStartedAtNanos
+        val exactHandoffNanos = if (automaticCountdownHandoff && inspectionStart != null) inspectionStart + InspectionRules.COUNTDOWN_NANOS else null
+        if (exactHandoffNanos != null) timer.startAt(exactHandoffNanos) else timer.start()
+        inspectionAutoStartsSolve = false
         if (solveSoundsEnabled.value) playTimerSound(R.raw.solve_start)
         activeSessionId = session
         activeSessionType = sessionEntity?.sessionType ?: "standard"
@@ -718,6 +733,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             elapsedNanos.value = duration
             activePenalty = Penalty.NONE
             phaseSplitsNanos.value = emptyList()
+            if (solveSoundsEnabled.value) playTimerSound(R.raw.solve_end)
             return
         }
         val priorBest = solves.value.asSequence()
@@ -784,6 +800,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cancelInspection() {
         timer.reset()
+        inspectionAutoStartsSolve = false
         isInspecting.value = false
         inspectionNanos.value = 0L
         isPreparing.value = false

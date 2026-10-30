@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.3 — 2026-10-30
+
+- In countdown inspection mode, automatically starts the solve timer when the 15-second countdown reaches zero; the solve then counts up normally.
+- Anchors that handoff to the exact monotonic 15-second deadline, so frame/ticker delay does not alter the recorded solve time.
+- Keeps manual start and the +2/DNF thresholds in count-up inspection mode; shared timing constants prevent display and penalty boundaries from drifting apart.
+- Clarified the countdown setting so automatic start behavior is explicit.
+- Updated Android version code to 13 and version name to 1.0.3.
+
 ## 1.0.2 — 2026-10-30
 
 - Fixed inspection restarts caused by quick taps; taps during inspection now leave the monotonic inspection clock alone.
