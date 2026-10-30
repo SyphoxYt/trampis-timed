@@ -2,6 +2,10 @@
 
 Trampis Timed is the Android continuation of CubeTime, ported from the original project to Kotlin and Jetpack Compose.
 
+## Version 1.0.2
+
+Inspection no longer restarts when the timer is tapped during the inspection period. The countdown stays at zero after 15 seconds while the +2 window is active, and DNF begins only after 17 seconds. Timer-only sessions also start and stop without recording solves.
+
 ## Version 1.0.1
 
 The 1.0.1 update keeps the display awake while the app is visible, adds optional sound cues for solving, personal bests, session creation, and scramble refresh, and replaces the page-slide navigation with a cleaner sequential fade.

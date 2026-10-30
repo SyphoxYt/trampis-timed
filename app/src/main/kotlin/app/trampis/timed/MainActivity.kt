@@ -771,7 +771,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
         }
         val timerColor = when {
             running -> MaterialTheme.colorScheme.onBackground
-            inspecting && inspectionElapsed >= 17_000_000_000L -> Color(0xFFE34F53)
+            inspecting && inspectionElapsed > 17_000_000_000L -> Color(0xFFE34F53)
             inspecting && inspectionElapsed >= 15_000_000_000L -> Color(0xFFF28D36)
             preparing -> Color(0xFF49A867)
             else -> MaterialTheme.colorScheme.onBackground
@@ -875,7 +875,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
             Row(Modifier.graphicsLayer { scaleX = timerScale; scaleY = timerScale }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 Text(timeText, fontFamily = if (timerFontPreset == "system") FontFamily.Default else recursiveFontFamily(if (boldTimerDigits) timerFontWeight else 500), fontSize = timerSize, fontWeight = FontWeight.Normal, color = animatedTimerColor, maxLines = 1, softWrap = false)
                 if (inspecting && inspectionElapsed >= 15_000_000_000L) {
-                    Text(if (inspectionElapsed >= 17_000_000_000L) " [DNF]" else " [+2]", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = timerColor)
+                    Text(if (inspectionElapsed > 17_000_000_000L) " [DNF]" else " [+2]", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = timerColor)
                 }
             }
         }
@@ -920,7 +920,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
 private fun countdownValue(elapsedNanos: Long): String {
     val seconds = elapsedNanos / 1_000_000_000L
     return when {
-        seconds >= 16 -> "−"
+        seconds >= 15 -> "0"
         else -> (15 - seconds).coerceAtLeast(0).toString()
     }
 }
