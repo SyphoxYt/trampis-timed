@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.2 — 2026-10-30
+
+- Separated Solves sorting and selection controls to prevent overlap; batch actions live in their own overflow menu.
+- Replaced the default New Session dialog with a custom responsive session setup flow with animated styles, event selection, phase controls, and goal validation.
+- Tuned the creator and search field for compact screens and enlarged text.
+- Updated Android version code to 8 and version name to 0.6.2.
+
+## 0.6.1 — 2026-10-30
+
+- Fixed the Solves sort and selection controls so they no longer overlap; selection actions now have a dedicated overflow menu.
+- Replaced the basic New Session dialog with a responsive setup screen, animated session-style cards, event selection, multiphase controls, and validated goals.
+- Shortened labels and adjusted spacing in the session creator on compact screens.
+- Updated Android version code to 7 and version name to 0.6.1.
+
 ## 0.6.0 — 2026-10-30
 
 - Applied CubeTime's Recursive variable font weights to timer and Stats numbers for a true bold display, with an adjustable timer weight slider.
