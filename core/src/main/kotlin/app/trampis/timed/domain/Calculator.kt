@@ -1,5 +1,7 @@
 package app.trampis.timed.domain
 
+import kotlin.math.roundToLong
+
 enum class CalculatorMode { AVERAGE, MEAN }
 
 /** Input and calculation rules shared by the standalone solve calculator. */
@@ -17,7 +19,7 @@ object SolveCalculator {
             2 -> wholeUnits[0] * 60.0 + seconds
             else -> wholeUnits[0] * 3600.0 + wholeUnits[1] * 60.0 + seconds
         }
-        return (totalSeconds * 1000.0).toLong().takeIf { it >= 0 }
+        return (totalSeconds * 1000.0).roundToLong().takeIf { it >= 0 }
     }
 
     fun result(results: List<TimedResult>, mode: CalculatorMode, width: Int): Average? {

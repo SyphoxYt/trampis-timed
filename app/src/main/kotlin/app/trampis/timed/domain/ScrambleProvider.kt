@@ -8,7 +8,9 @@ data class ScrambleOutput(val notation: String, val drawingSvg: String)
 
 /** TNoodle supplies actual WCA puzzle scrambles; generation stays off the UI thread. */
 class ScrambleProvider {
-    suspend fun next(eventId: String): String = nextWithDrawing(eventId).notation
+    suspend fun next(eventId: String): String = withContext(Dispatchers.IO) {
+        CubeEvents.fromId(eventId).puzzle.getScrambler().generateWcaScramble(Puzzle.getSecureRandom())
+    }
 
     suspend fun nextWithDrawing(eventId: String): ScrambleOutput = withContext(Dispatchers.IO) {
         val puzzle = CubeEvents.fromId(eventId).puzzle.getScrambler()

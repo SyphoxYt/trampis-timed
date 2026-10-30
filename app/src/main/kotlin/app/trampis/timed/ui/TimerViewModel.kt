@@ -1,7 +1,8 @@
 package app.trampis.timed.ui
 
 import android.app.Application
-import android.media.MediaPlayer
+import android.media.AudioAttributes
+import android.media.SoundPool
 import android.content.Context
 import android.os.SystemClock
 import android.provider.Settings
@@ -30,6 +31,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flatMapLatest
@@ -83,6 +86,13 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     private val timer = TimerEngine(SystemClock::elapsedRealtimeNanos)
     private val scrambleProvider = ScrambleProvider()
     private val activeRunMutex = Mutex()
+    private var activeRunSaveJob: kotlinx.coroutines.Job? = null
+    private val soundPool = SoundPool.Builder().setMaxStreams(5).setAudioAttributes(
+        AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build(),
+    ).build()
+    private val soundIds = mutableMapOf<Int, Int>()
+    private val loadedSoundIds = mutableSetOf<Int>()
+    private val pendingSoundIds = mutableSetOf<Int>()
     private val undoMutex = Mutex()
 
     val sessions = dao.observeSessions().stateIn(
@@ -119,6 +129,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     val graphGlow = MutableStateFlow(true)
     val graphAnimation = MutableStateFlow(true)
     val showConfetti = MutableStateFlow(true)
+    val confettiEvent = MutableStateFlow(0)
     val boldTimerDigits = MutableStateFlow(true)
     val timerFontWeight = MutableStateFlow(740)
     val accentPreset = MutableStateFlow("blue")
@@ -152,6 +163,12 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     private var recoveryWarning: String? = null
 
     init {
+        soundPool.setOnLoadCompleteListener { pool, sampleId, status ->
+            if (status == 0) {
+                loadedSoundIds += sampleId
+                if (pendingSoundIds.remove(sampleId)) pool.play(sampleId, 1f, 1f, 1, 0, 1f)
+            }
+        }
         viewModelScope.launch {
             application.trampisPreferences.data.collect { prefs ->
                 inspectionEnabled.value = prefs[InspectionKey] ?: false
@@ -237,38 +254,35 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
-            while (true) {
-                if (timer.isRunning) elapsedNanos.value = timer.elapsedNanos()
-                if (timer.isInspecting) {
-                    val elapsed = timer.inspectionElapsedNanos()
-                    inspectionNanos.value = elapsed
-                    val elapsedSeconds = elapsed / 1_000_000_000L
-                    val countdownMode = inspectionCountdownActive.value
-                    val remainingSeconds = (InspectionRules.COUNTDOWN_SECONDS - elapsedSeconds).coerceAtLeast(0L)
-                    val reached12 = if (countdownMode) remainingSeconds <= 12L else elapsedSeconds >= 12L
-                    val reached8 = if (countdownMode) remainingSeconds <= 8L else elapsedSeconds >= 8L
-                    if (inspectionAlertsEnabled.value) {
-                        if (reached12 && !inspection12AlertPlayed) {
-                            playInspectionAlert(R.raw.inspection_12)
-                            inspection12AlertPlayed = true
+            combine(isRunning, isInspecting) { running, inspecting -> running || inspecting }
+                .distinctUntilChanged().collectLatest { active ->
+                    if (active) while (timer.isRunning || timer.isInspecting) {
+                        if (timer.isRunning) elapsedNanos.value = timer.elapsedNanos()
+                        if (timer.isInspecting) {
+                            val elapsed = timer.inspectionElapsedNanos()
+                            inspectionNanos.value = elapsed
+                            val elapsedSeconds = elapsed / 1_000_000_000L
+                            val countdownMode = inspectionCountdownActive.value
+                            val remainingSeconds = (InspectionRules.COUNTDOWN_SECONDS - elapsedSeconds).coerceAtLeast(0L)
+                            val reached12 = if (countdownMode) remainingSeconds <= 12L else elapsedSeconds >= 12L
+                            val reached8 = if (countdownMode) remainingSeconds <= 8L else elapsedSeconds >= 8L
+                            if (inspectionAlertsEnabled.value) {
+                                if (reached12 && !inspection12AlertPlayed) { playInspectionAlert(R.raw.inspection_12); inspection12AlertPlayed = true }
+                                if (reached8 && !inspection8AlertPlayed) { playInspectionAlert(R.raw.inspection_8); inspection8AlertPlayed = true }
+                            }
+                            if (elapsed >= InspectionRules.COUNTDOWN_NANOS) {
+                                startFromHold()
+                                if (timer.isInspecting) cancelInspection()
+                            }
                         }
-                        if (reached8 && !inspection8AlertPlayed) {
-                            playInspectionAlert(R.raw.inspection_8)
-                            inspection8AlertPlayed = true
-                        }
-                    }
-                    if (elapsed >= InspectionRules.COUNTDOWN_NANOS) {
-                        startFromHold()
-                        // Inspection ends at the same fixed deadline in both display modes.
-                        if (timer.isInspecting) cancelInspection()
+                        delay(16)
                     }
                 }
-                delay(16)
-            }
         }
     }
 
     fun selectSession(sessionId: Long) {
+        if (timer.isInspecting) return
         currentSessionId.value = sessionId
         persistSelectedSession(sessionId)
         nextScramble()
@@ -306,9 +320,10 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateSession(session: SessionEntity) {
         viewModelScope.launch(Dispatchers.IO) {
+            val previous = dao.getSessions().firstOrNull { it.id == session.id }
             val updated = session.copy(eventId = CubeEvents.fromId(session.eventId).id)
             dao.updateSession(updated)
-            if (currentSessionId.value == session.id) nextScramble(updated)
+            if (currentSessionId.value == session.id && previous != null && (previous.eventId != updated.eventId || previous.sessionType != updated.sessionType) && !isScrambleLocked.value && !timer.isRunning && !timer.isInspecting) nextScramble(updated)
         }
     }
 
@@ -323,7 +338,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteSession(sessionId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
-            if (isRunning.value && activeSessionId == sessionId) {
+            if ((isRunning.value && activeSessionId == sessionId) || (timer.isInspecting && currentSessionId.value == sessionId)) {
                 error.value = "Stop the timer before deleting its session."
                 return@launch
             }
@@ -338,31 +353,29 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun deleteSessionWithUndo(sessionId: Long) {
-        viewModelScope.launch(Dispatchers.IO) { undoMutex.withLock {
-            if (isRunning.value && activeSessionId == sessionId) {
-                error.value = "Stop the timer before deleting its session."
-                return@launch
+    suspend fun deleteSessionWithUndo(sessionId: Long): Boolean = withContext(Dispatchers.IO) { undoMutex.withLock {
+        if ((isRunning.value && activeSessionId == sessionId) || (timer.isInspecting && currentSessionId.value == sessionId)) {
+            error.value = "Stop the timer before deleting its session."
+            return@withLock false
+        }
+        val session = dao.getSessions().firstOrNull { it.id == sessionId } ?: return@withLock false
+        val sessionSolves = dao.getSolves(sessionId)
+        val wasCurrent = currentSessionId.value == sessionId
+        undoRecord = UndoRecord.Session(session, sessionSolves, wasCurrent)
+        dao.deleteSession(sessionId)
+        val remaining = dao.getSessions()
+        if (wasCurrent) {
+            val next = remaining.firstOrNull() ?: run {
+                val replacement = SessionEntity(name = "3×3×3")
+                val id = dao.addSession(replacement)
+                replacement.copy(id = id)
             }
-            val session = dao.getSessions().firstOrNull { it.id == sessionId } ?: return@launch
-            val sessionSolves = dao.getSolves(sessionId)
-            val wasCurrent = currentSessionId.value == sessionId
-            undoRecord = UndoRecord.Session(session, sessionSolves, wasCurrent)
-            dao.deleteSession(sessionId)
-            val remaining = dao.getSessions()
-            if (wasCurrent) {
-                val next = remaining.firstOrNull() ?: run {
-                    val replacement = SessionEntity(name = "3×3×3")
-                    val id = dao.addSession(replacement)
-                    replacement.copy(id = id)
-                }
-                currentSessionId.value = next.id
-                persistSelectedSession(next.id)
-                nextScramble(next)
-            }
-        } }
-    }
-
+            currentSessionId.value = next.id
+            persistSelectedSession(next.id)
+            nextScramble(next)
+        }
+        true
+    } }
     fun deleteSolvesWithUndo(solveIds: List<Long>) {
         if (solveIds.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) { undoMutex.withLock {
@@ -466,11 +479,13 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         inspectionNanos.value = 0L
         phaseSplitsNanos.value = emptyList()
         viewModelScope.launch(Dispatchers.IO) {
+            activeRunSaveJob?.join()
             activeRunMutex.withLock { dao.clearActiveTimer() }
         }
     }
 
     fun nextScramble(sessionOverride: SessionEntity? = null, playCue: Boolean = false) {
+        if (timer.isInspecting) return
         val requestId = ++scrambleRequestSequence
         val session = sessionOverride ?: sessions.value.firstOrNull { it.id == currentSessionId.value }
         if (session?.sessionType == "timerOnly") {
@@ -492,6 +507,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 if (requestId != scrambleRequestSequence) return@launch
                 scrambleSvg.value = null
+                scramble.value = "Scramble unavailable — refresh to retry"
                 error.value = "TNoodle could not generate a scramble: ${e.message ?: "unknown error"}"
             }
         }
@@ -504,6 +520,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setPlaygroundEvent(eventId: String) {
+        if (timer.isInspecting) return
         val session = selectedSession.value ?: return
         val requestId = ++scrambleRequestSequence
         val puzzleId = CubeEvents.fromId(eventId).id
@@ -518,6 +535,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 if (requestId != scrambleRequestSequence) return@launch
                 scrambleSvg.value = null
+                scramble.value = "Scramble unavailable — refresh to retry"
                 error.value = "TNoodle could not generate a scramble: ${e.message ?: "unknown error"}"
             }
         }
@@ -537,18 +555,18 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun applyPenalty(solveIds: List<Long>, penalty: Penalty) {
         if (solveIds.isEmpty()) return
-        viewModelScope.launch(Dispatchers.IO) { dao.setPenalties(solveIds, penalty.ordinal) }
+        viewModelScope.launch(Dispatchers.IO) { dao.setPenaltiesChunked(solveIds, penalty.ordinal) }
     }
 
     fun deleteSolves(solveIds: List<Long>) {
         if (solveIds.isEmpty()) return
-        viewModelScope.launch(Dispatchers.IO) { dao.deleteSolves(solveIds) }
+        viewModelScope.launch(Dispatchers.IO) { dao.deleteSolvesChunked(solveIds) }
     }
 
     fun moveSolves(solveIds: List<Long>, destination: SessionEntity) {
         if (solveIds.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
-            dao.moveSolves(solveIds, destination.id, if (destination.sessionType == "multiphase") null else "[]")
+            dao.moveSolvesChunked(solveIds, destination.id, if (destination.sessionType == "multiphase") null else "[]")
         }
     }
 
@@ -574,7 +592,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     fun setTimerStatsEnabled(enabled: Boolean) = updatePreference(TimerStatsKey, enabled)
     fun setScrambleDrawingEnabled(enabled: Boolean) = updatePreference(ScrambleDrawingKey, enabled)
     fun setHoldTimeSeconds(seconds: Float) {
-        val normalized = seconds.coerceIn(0f, 1f)
+        val normalized = seconds.coerceIn(0.1f, 1f)
         holdTimeMillis.value = (normalized * 1000).toLong()
         viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[HoldTimeKey] = normalized } }
     }
@@ -674,6 +692,11 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             startFromHold()
             return
         }
+        beginInspection()
+    }
+
+    private fun beginInspection() {
+        if (timer.isInspecting || timer.isRunning) return
         timer.startInspection()
         activePenalty = Penalty.NONE
         inspectionCountdownActive.value = inspectionCountdownEnabled.value
@@ -684,12 +707,15 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         error.value = null
     }
 
-    private fun playInspectionAlert(resourceId: Int) {
+    private fun playInspectionAlert(resourceId: Int) = playSound(resourceId)
+
+    private fun playTimerSound(resourceId: Int) = playSound(resourceId)
+
+    private fun playSound(resourceId: Int) {
         runCatching {
-            MediaPlayer.create(getApplication<Application>(), resourceId)?.apply {
-                setOnCompletionListener { it.release() }
-                start()
-            }
+            val sampleId = soundIds.getOrPut(resourceId) { soundPool.load(getApplication<Application>(), resourceId, 1) }
+            if (sampleId in loadedSoundIds) soundPool.play(sampleId, 1f, 1f, 1, 0, 1f)
+            else pendingSoundIds += sampleId
         }
     }
 
@@ -697,6 +723,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startFromHold() {
         if (timer.isRunning) return
+        if (!timer.isInspecting && inspectionEnabled.value) { beginInspection(); return }
         val sessionEntity = sessions.value.firstOrNull { it.id == currentSessionId.value }
         val timerOnly = sessionEntity?.sessionType == "timerOnly"
         if (!timerOnly && (scramble.value.isBlank() || scramble.value.startsWith("Preparing") || scramble.value.startsWith("Generating"))) {
@@ -750,12 +777,13 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             if (solveSoundsEnabled.value) playTimerSound(R.raw.solve_end)
             return
         }
-        val priorBest = solves.value.asSequence()
+        val priorBest = allSolves.value.asSequence()
             .filter { it.sessionId == activeSessionId && it.penalty != Penalty.DNF.ordinal }
             .map { it.timeMillis + if (it.penalty == Penalty.PLUS_TWO.ordinal) 2_000L else 0L }
             .minOrNull()
         val finalMillis = duration / 1_000_000L + if (activePenalty == Penalty.PLUS_TWO) 2_000L else 0L
         val isNewBest = activePenalty != Penalty.DNF && (priorBest == null || finalMillis < priorBest)
+        if (isNewBest && showConfetti.value) confettiEvent.value++
         if (solveSoundsEnabled.value) playTimerSound(if (isNewBest) R.raw.solve_record else R.raw.solve_end)
         isRunning.value = false
         elapsedNanos.value = duration
@@ -775,6 +803,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         )
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
+                activeRunSaveJob?.join()
                 activeRunMutex.withLock { dao.finishActiveTimer(completedSolve) }
             }
             activePenalty = Penalty.NONE
@@ -783,14 +812,6 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun playTimerSound(resourceId: Int) {
-        runCatching {
-            MediaPlayer.create(getApplication<Application>(), resourceId)?.apply {
-                setOnCompletionListener { it.release() }
-                start()
-            }
-        }
-    }
 
     private fun queueActiveRunSave() {
         val start = timer.startedAtNanos ?: return
@@ -804,7 +825,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             scramble = activeScramble,
             phaseSplitsJson = phaseSplitsNanos.value.joinToString(prefix = "[", postfix = "]"),
         )
-        viewModelScope.launch(Dispatchers.IO) {
+        val previous = activeRunSaveJob
+        activeRunSaveJob = viewModelScope.launch(Dispatchers.IO) {
+            previous?.join()
             activeRunMutex.withLock { dao.saveActiveTimer(activeRun) }
         }
     }
@@ -819,4 +842,6 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         inspectionNanos.value = 0L
         isPreparing.value = false
     }
+    override fun onCleared() { soundPool.release(); super.onCleared() }
+
 }

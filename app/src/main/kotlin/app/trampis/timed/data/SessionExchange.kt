@@ -12,6 +12,7 @@ import java.util.Locale
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlin.math.roundToLong
 
 data class SessionWithSolves(val session: SessionEntity, val solves: List<SolveEntity>)
 data class SessionImportPreview(val format: String, val sessions: Int, val solves: Int, val names: List<String>)
@@ -45,11 +46,11 @@ object SessionExchange {
         require(backup.sessions.all { session ->
             session.name.isNotBlank() && session.name.length <= 120 && session.eventId in events &&
                 session.sessionType in types && session.phaseCount in 2..8 && session.createdAt > 0L &&
-                (session.targetMillis == null || session.targetMillis > 0L) && session.solves.size <= 100_000 &&
-            session.sortOrder in -1_000_000..1_000_000 && session.solves.all { solve -> solve.timeMillis >= 0L && solve.penalty in 0..2 && solve.createdAt > 0L && solve.scramble.length <= 20_000 && solve.comment.length <= 4_000 && solve.phaseTimesJson.length <= 4_000 }
+                (session.targetMillis == null || session.targetMillis >= 0L) && session.solves.size <= 100_000 &&
+            session.sortOrder in -1_000_000..1_000_000 && session.solves.all { solve -> solve.timeMillis >= 0L && solve.penalty in 0..2 && solve.createdAt >= 0L && solve.scramble.length <= 20_000 && solve.comment.length <= 4_000 && solve.phaseTimesJson.length <= 4_000 }
         }) { "The backup contains invalid session or solve data." }
-        backup.sessions
-    }.getOrNull()
+        backup.sessions.map { session -> session.copy(targetMillis = session.targetMillis?.takeIf { it > 0L }) }
+    }.getOrThrowIfRecognizedBackup(text)
 
     fun previewImport(text: String, suggestedName: String): SessionImportPreview {
         require(text.length <= 20_000_000) { "The selected file is larger than the 20 MB import limit." }
@@ -201,7 +202,7 @@ object SessionExchange {
                 else -> error("CSV contains an unsupported penalty on row ${index + 2}.")
             }
             ImportedSolve(
-                timeMillis = (seconds * 1000.0).toLong(),
+                timeMillis = (seconds * 1000.0).roundToLong(),
                 penalty = penalty,
                 scramble = col(scrambleCol),
                 comment = col(commentCol),
@@ -227,20 +228,23 @@ object SessionExchange {
                 ?.removePrefix("Trampis Timed - ")?.ifBlank { null } ?: "Imported Session $number"
             val eventId = info?.get("scrType")?.asString?.toEventId() ?: "333"
             val entries = value.asJsonArray
-            val solves = entries.mapNotNull { entryElement ->
+            val solves = entries.map { entryElement ->
+                require(entryElement.isJsonArray) { "csTimer session $number contains a malformed solve." }
                 val entry = entryElement.asJsonArray
-                if (entry.size() < 4 || !entry[0].isJsonArray) return@mapNotNull null
+                require(entry.size() >= 4 && entry[0].isJsonArray) { "csTimer session $number contains a solve with missing fields." }
                 val result = entry[0].asJsonArray
-                if (result.size() < 2) return@mapNotNull null
+                require(result.size() >= 2) { "csTimer session $number contains a solve with a missing time." }
                 val penaltyValue = result[0].asInt
                 val rawTime = result[1].asLong
-                if (rawTime < 0) return@mapNotNull null
+                require(rawTime >= 0L) { "csTimer session $number contains a negative time." }
+                val timestamp = entry[3].asLong
+                require(timestamp >= 0L && timestamp <= Long.MAX_VALUE / 1000L) { "csTimer session $number contains an invalid timestamp." }
                 ImportedSolve(
                     timeMillis = rawTime,
                     penalty = when (penaltyValue) { -1 -> 2; 2000 -> 1; else -> 0 },
                     scramble = entry[1].takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
                     comment = entry[2].takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-                    createdAt = entry[3].asLong * 1000L,
+                    createdAt = timestamp * 1000L,
                 )
             }
             ImportedSession(name, eventId, solves)
@@ -301,6 +305,13 @@ object SessionExchange {
         else -> "333"
     }
 }
+
+private fun <T> Result<T>.getOrThrowIfRecognizedBackup(text: String): T? =
+    getOrElse { error ->
+        val root = runCatching { JsonParser.parseString(text).asJsonObject }.getOrNull()
+        if (root?.get("format")?.asString == "trampis-timed-backup") throw error
+        null
+    }
 
 data class TrampisBackup(val format: String, val version: Int, val sessions: List<BackupSession>)
 data class BackupSession(val name: String, val eventId: String, val sessionType: String, val phaseCount: Int, val targetMillis: Long?, val createdAt: Long, val pinned: Boolean, val solves: List<BackupSolve>, val sortOrder: Int = 0, val archived: Boolean = false)
