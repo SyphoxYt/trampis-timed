@@ -46,10 +46,6 @@ Requirements: JDK 17, Android SDK platform 36, and Android build-tools 36.0.0.
 
 TNoodle is GPL-3.0 and generates WCA-style scrambles for the supported puzzle registry. Use the WCA's current official program for competition scrambling; this app is a personal timer and does not claim WCA approval.
 
-## Contributors
-
-- Claude (Anthropic) — AI coding and debugging assistance, including timer and reliability bug fixes.
-
 ## Source and attribution
 
 CubeTime source: <https://github.com/CubeLabsNZ/CubeTime> (GPL-3.0). TNoodle-LIB: <https://github.com/thewca/tnoodle-lib> (GPL-3.0). The CubeTime license is included as `LICENSE`.
