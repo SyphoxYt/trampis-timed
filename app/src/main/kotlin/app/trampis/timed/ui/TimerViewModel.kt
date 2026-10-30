@@ -57,6 +57,9 @@ private val ConfettiKey = booleanPreferencesKey("show_confetti")
 private val BoldTimerKey = booleanPreferencesKey("bold_timer_digits")
 private val AccentPresetKey = androidx.datastore.preferences.core.stringPreferencesKey("accent_preset")
 private val StatsMotionKey = booleanPreferencesKey("stats_card_motion")
+private val TimerSizeKey = floatPreferencesKey("timer_size_scale")
+private val ScrambleSizeKey = androidx.datastore.preferences.core.intPreferencesKey("scramble_text_size")
+private val TimerFontKey = androidx.datastore.preferences.core.stringPreferencesKey("timer_font_preset")
 
 class TimerViewModel(application: Application) : AndroidViewModel(application) {
     private val dao = TrampisDatabase.get(application).timerDao()
@@ -95,6 +98,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     val boldTimerDigits = MutableStateFlow(true)
     val accentPreset = MutableStateFlow("blue")
     val statsCardMotion = MutableStateFlow(true)
+    val timerSizeScale = MutableStateFlow(1f)
+    val scrambleTextSize = MutableStateFlow(17)
+    val timerFontPreset = MutableStateFlow("recursive")
     val elapsedNanos = MutableStateFlow(0L)
     val inspectionNanos = MutableStateFlow(0L)
     val phaseSplitsNanos = MutableStateFlow<List<Long>>(emptyList())
@@ -130,6 +136,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                 boldTimerDigits.value = prefs[BoldTimerKey] ?: true
                 accentPreset.value = prefs[AccentPresetKey] ?: "blue"
                 statsCardMotion.value = prefs[StatsMotionKey] ?: true
+                timerSizeScale.value = (prefs[TimerSizeKey] ?: 1f).coerceIn(.85f, 1.2f)
+                scrambleTextSize.value = (prefs[ScrambleSizeKey] ?: 17).coerceIn(14, 23)
+                timerFontPreset.value = prefs[TimerFontKey]?.takeIf { it == "recursive" || it == "system" } ?: "recursive"
             }
         }
         viewModelScope.launch {
@@ -262,12 +271,26 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         SessionExchange.csTimer(all)
     }
 
+    suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
+        val all = dao.getSessions().map { session -> SessionWithSolves(session, dao.getSolves(session.id)) }
+        SessionExchange.backup(all)
+    }
+
     suspend fun exportOds(): ByteArray = withContext(Dispatchers.IO) {
         val all = dao.getSessions().map { session -> SessionWithSolves(session, dao.getSolves(session.id)) }
         SessionExchange.ods(all)
     }
 
     suspend fun importSessions(text: String, filename: String): Int = withContext(Dispatchers.IO) {
+        val backup = SessionExchange.parseBackup(text)
+        if (backup != null) {
+            val ids = dao.addBackupSessions(backup.map { session -> session.copy(eventId = CubeEvents.fromId(session.eventId).id) })
+            val first = backup.first()
+            currentSessionId.value = ids.first()
+            persistSelectedSession(ids.first())
+            nextScramble(SessionEntity(id = ids.first(), name = first.name, eventId = CubeEvents.fromId(first.eventId).id, sessionType = first.sessionType, phaseCount = first.phaseCount, targetMillis = first.targetMillis))
+            return@withContext ids.size
+        }
         val imported = SessionExchange.parse(text, filename)
         require(imported.isNotEmpty()) { "The file contains no sessions." }
         val ids = dao.addImportedSessions(imported.map { session ->
@@ -411,12 +434,29 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[AccentPresetKey] = normalized } }
     }
     fun setStatsCardMotion(value: Boolean) = updatePreference(StatsMotionKey, value)
+    fun setTimerSizeScale(value: Float) {
+        val normalized = value.coerceIn(.85f, 1.2f)
+        timerSizeScale.value = normalized
+        viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[TimerSizeKey] = normalized } }
+    }
+    fun setScrambleTextSize(value: Int) {
+        val normalized = value.coerceIn(14, 23)
+        scrambleTextSize.value = normalized
+        viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[ScrambleSizeKey] = normalized } }
+    }
+    fun setTimerFontPreset(value: String) {
+        val normalized = value.takeIf { it == "recursive" || it == "system" } ?: "recursive"
+        timerFontPreset.value = normalized
+        viewModelScope.launch { getApplication<Application>().trampisPreferences.edit { it[TimerFontKey] = normalized } }
+    }
     fun resetAppearance() {
         viewModelScope.launch { getApplication<Application>().trampisPreferences.edit {
             it.remove(AppearanceOverrideKey); it.remove(DarkModeKey); it.remove(StaticGradientKey)
             it.remove(GraphGlowKey); it.remove(GraphAnimationKey); it.remove(ConfettiKey)
             it.remove(BoldTimerKey); it.remove(AccentPresetKey)
             it.remove(StatsMotionKey)
+            it.remove(TimerSizeKey); it.remove(ScrambleSizeKey)
+            it.remove(TimerFontKey)
         } }
     }
     private fun persistSelectedSession(sessionId: Long) {

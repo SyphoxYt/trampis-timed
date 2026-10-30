@@ -18,6 +18,27 @@ data class SessionWithSolves(val session: SessionEntity, val solves: List<SolveE
 /** CSV and csTimer formats used by CubeTime, with tolerant import for standard csTimer exports. */
 object SessionExchange {
     private const val ODS_MIMETYPE = "application/vnd.oasis.opendocument.spreadsheet"
+    private const val BACKUP_FORMAT = "trampis-timed-backup"
+
+    /** Lossless app backup, including session settings, comments, dates, penalties and phases. */
+    fun backup(sessions: List<SessionWithSolves>): String = com.google.gson.Gson().toJson(
+        TrampisBackup(format = BACKUP_FORMAT, version = 1, sessions = sessions.map { item ->
+            BackupSession(
+                name = item.session.name, eventId = item.session.eventId, sessionType = item.session.sessionType,
+                phaseCount = item.session.phaseCount, targetMillis = item.session.targetMillis,
+                createdAt = item.session.createdAt, pinned = item.session.pinned,
+                solves = item.solves.map { solve -> BackupSolve(solve.timeMillis, solve.penalty, solve.scramble, solve.createdAt, solve.comment, solve.phaseTimesJson) },
+            )
+        }),
+    )
+
+    fun parseBackup(text: String): List<BackupSession>? = runCatching {
+        val root = JsonParser.parseString(text).asJsonObject
+        if (root.get("format")?.asString != BACKUP_FORMAT || root.get("version")?.asInt != 1) return null
+        val backup = com.google.gson.Gson().fromJson(root, TrampisBackup::class.java)
+        require(backup.sessions.isNotEmpty()) { "The backup contains no sessions." }
+        backup.sessions
+    }.getOrNull()
 
     /** CubeTime-compatible OpenDocument workbook: one sheet per selected session. */
     fun ods(sessions: List<SessionWithSolves>): ByteArray {
@@ -253,5 +274,8 @@ object SessionExchange {
     }
 }
 
+data class TrampisBackup(val format: String, val version: Int, val sessions: List<BackupSession>)
+data class BackupSession(val name: String, val eventId: String, val sessionType: String, val phaseCount: Int, val targetMillis: Long?, val createdAt: Long, val pinned: Boolean, val solves: List<BackupSolve>)
+data class BackupSolve(val timeMillis: Long, val penalty: Int, val scramble: String, val createdAt: Long, val comment: String, val phaseTimesJson: String)
 data class ImportedSession(val name: String, val eventId: String, val solves: List<ImportedSolve>)
 data class ImportedSolve(val timeMillis: Long, val penalty: Int, val scramble: String, val comment: String, val createdAt: Long)

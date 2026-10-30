@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.History
@@ -102,6 +103,10 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
         val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         WindowInsetsControllerCompat(window, window.decorView).apply {
             isAppearanceLightStatusBars = !night
@@ -256,6 +261,9 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
     val showConfetti by vm.showConfetti.collectAsState()
     val boldTimerDigits by vm.boldTimerDigits.collectAsState()
     val statsCardMotion by vm.statsCardMotion.collectAsState()
+    val timerSizeScale by vm.timerSizeScale.collectAsState()
+    val scrambleTextSize by vm.scrambleTextSize.collectAsState()
+    val timerFontPreset by vm.timerFontPreset.collectAsState()
     val elapsed by vm.elapsedNanos.collectAsState()
     val inspectionElapsed by vm.inspectionNanos.collectAsState()
     val phaseSplits by vm.phaseSplitsNanos.collectAsState()
@@ -286,6 +294,15 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
                 .onFailure { Toast.makeText(context, "Export failed: ${it.message}", Toast.LENGTH_LONG).show() }
         }
     }
+    val exportBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) scope.launch {
+            runCatching {
+                val json = vm.exportBackupJson()
+                requireNotNull(context.contentResolver.openOutputStream(uri)).bufferedWriter().use { it.write(json) }
+            }.onSuccess { Toast.makeText(context, "Full backup saved", Toast.LENGTH_SHORT).show() }
+                .onFailure { Toast.makeText(context, "Backup failed: ${it.message}", Toast.LENGTH_LONG).show() }
+        }
+    }
     val exportOds = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.oasis.opendocument.spreadsheet")) { uri ->
         if (uri != null) scope.launch {
             runCatching {
@@ -306,14 +323,14 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
         }
     }
 
-    Scaffold(containerColor = MaterialTheme.colorScheme.background, bottomBar = { if (page != "Tools") CubeTabBar(page) { page = it; selectedTool = null } }) { padding ->
+    Scaffold(containerColor = MaterialTheme.colorScheme.background, bottomBar = { if (page != "Tools") CubeTabBar(page, haptics) { page = it; selectedTool = null } }) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
           AnimatedContent(targetState = page, transitionSpec = {
               (fadeIn(androidx.compose.animation.core.tween(240)) + androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(280)) { it / 16 }) togetherWith
                   (fadeOut(androidx.compose.animation.core.tween(160)) + androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(200)) { -it / 24 })
           }, label = "cube-page") { visiblePage ->
             when (visiblePage) {
-                "Timer" -> TimerPage(vm, selected, solves, scramble, scrambleSvg, scrambleLocked, running, inspecting, preparing, elapsed, inspectionElapsed, inspectionCountdown, phaseSplits, holdTime, haptics, timerStats, scrambleDrawing, decimalPlaces, boldTimerDigits, error) { showSessions = true }
+                "Timer" -> TimerPage(vm, selected, solves, scramble, scrambleSvg, scrambleLocked, running, inspecting, preparing, elapsed, inspectionElapsed, inspectionCountdown, phaseSplits, holdTime, haptics, timerStats, scrambleDrawing, decimalPlaces, boldTimerDigits, timerSizeScale, scrambleTextSize, timerFontPreset, error) { showSessions = true }
                 "Solves" -> Column(Modifier.fillMaxSize()) { PageHeading("Times"); SolvesPage(solves, sessions, selected?.id, vm) }
                 "Stats" -> StatsPage(solves, selected, staticGradient, graphGlow, graphAnimation, statsCardMotion) { showSessions = true }
                 "Sessions" -> Column(Modifier.fillMaxSize()) {
@@ -328,11 +345,12 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
                         onExportCsv = { exportCsv.launch("${safeFileName(selected?.name ?: "Session")}.csv") },
                         onExportCsTimer = { exportCsTimer.launch("Trampis Timed - csTimer.json") },
                         onExportOds = { exportOds.launch("Trampis Timed - CubeTime Export.ods") },
+                        onBackup = { exportBackup.launch("Trampis-Timed-backup.json") },
                         onImport = { importDocument.launch(arrayOf("text/*", "application/json", "application/octet-stream")) },
                     )
                 }
                 "Tools" -> ToolsPage(selectedTool, onBack = { if (selectedTool != null) selectedTool = null else page = "Settings" }, onSelect = { selectedTool = it }, holdTime = holdTime)
-                "Appearance" -> AppearancePage(appearanceOverride, appearanceDark, staticGradient, graphGlow, graphAnimation, showConfetti, boldTimerDigits, statsCardMotion, vm,
+                "Appearance" -> AppearancePage(appearanceOverride, appearanceDark, staticGradient, graphGlow, graphAnimation, showConfetti, boldTimerDigits, statsCardMotion, timerSizeScale, scrambleTextSize, timerFontPreset, vm,
                     onBack = { page = "Settings" })
                 else -> Column(Modifier.fillMaxSize()) { PageHeading("Settings"); MorePage(inspectionEnabled, inspectionCountdown, holdTime, haptics, inspectionAlerts, timerStats, scrambleDrawing, decimalPlaces, vm, { page = "Tools" }, { page = "Appearance" }) }
             }
@@ -344,7 +362,8 @@ private fun CubeTimeMainContent(vm: TimerViewModel) {
 }
 
 @Composable
-private fun CubeTabBar(selected: String, onSelect: (String) -> Unit) {
+private fun CubeTabBar(selected: String, hapticsEnabled: Boolean, onSelect: (String) -> Unit) {
+    val haptic = LocalHapticFeedback.current
     val items = listOf(
         "Timer" to (Icons.Outlined.Timer to Icons.Filled.Timer),
         "Solves" to (Icons.Outlined.History to Icons.Filled.History),
@@ -368,7 +387,10 @@ private fun CubeTabBar(selected: String, onSelect: (String) -> Unit) {
             )
             val pill by androidx.compose.animation.animateColorAsState(if (active) MaterialTheme.colorScheme.primary.copy(alpha = .18f) else Color.Transparent, androidx.compose.animation.core.tween(220), label = "tab-pill-$label")
             Column(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 3.dp, vertical = 5.dp)
-                .background(pill, RoundedCornerShape(18.dp)).clickable { onSelect(label) },
+                .background(pill, RoundedCornerShape(18.dp)).clickable {
+                    if (label != selected && hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onSelect(label)
+                },
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Icon(if (active) icons.second else icons.first, contentDescription = label,
                     tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -390,7 +412,7 @@ private fun PageHeading(title: String, action: (() -> Unit)? = null) {
 }
 
 @Composable
-private fun SessionsPage(sessions: List<SessionEntity>, selected: SessionEntity?, onSelect: (Long) -> Unit, onCreate: () -> Unit, onPin: (SessionEntity) -> Unit, onUpdate: (SessionEntity) -> Unit, onDelete: (Long) -> Unit, onExportCsv: () -> Unit, onExportCsTimer: () -> Unit, onExportOds: () -> Unit, onImport: () -> Unit) {
+private fun SessionsPage(sessions: List<SessionEntity>, selected: SessionEntity?, onSelect: (Long) -> Unit, onCreate: () -> Unit, onPin: (SessionEntity) -> Unit, onUpdate: (SessionEntity) -> Unit, onDelete: (Long) -> Unit, onExportCsv: () -> Unit, onExportCsTimer: () -> Unit, onExportOds: () -> Unit, onBackup: () -> Unit, onImport: () -> Unit) {
     var editSession by remember { mutableStateOf<SessionEntity?>(null) }
     var deleteSession by remember { mutableStateOf<SessionEntity?>(null) }
     var menuSessionId by remember { mutableStateOf<Long?>(null) }
@@ -398,7 +420,10 @@ private fun SessionsPage(sessions: List<SessionEntity>, selected: SessionEntity?
         itemsIndexed(sessions, key = { _, session -> session.id }) { _, session ->
             ListItem(
                 headlineContent = { Text(session.name, fontWeight = FontWeight.Medium) },
-                supportingContent = { Text("${CubeEvents.fromId(session.eventId).name} · ${session.sessionType.replaceFirstChar { it.uppercase() }}") },
+                supportingContent = { Text(buildString {
+                    append(CubeEvents.fromId(session.eventId).name); append(" · "); append(session.sessionType.replaceFirstChar { it.uppercase() })
+                    if (session.sessionType != "compsim" && session.targetMillis != null) append(" · Goal ${formatMillis(session.targetMillis)}")
+                }) },
                 leadingContent = { EventIcon(session.eventId, 35) },
                 trailingContent = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -424,7 +449,8 @@ private fun SessionsPage(sessions: List<SessionEntity>, selected: SessionEntity?
                     TextButton(onClick = onExportCsTimer, enabled = sessions.isNotEmpty()) { Text("Export csTimer") }
                 }
                 TextButton(onClick = onExportOds, enabled = sessions.isNotEmpty(), modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Export ODS (all sessions)") }
-                TextButton(onClick = onImport, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Import CSV / csTimer JSON") }
+                TextButton(onClick = onBackup, enabled = sessions.isNotEmpty(), modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Create Full Backup") }
+                TextButton(onClick = onImport, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Import CSV / csTimer / app backup") }
             }
         }
     }
@@ -468,6 +494,7 @@ private fun SessionEditDialog(session: SessionEntity, onDismiss: () -> Unit, onS
                     TextButton(onClick = { phases = (phases + 1).coerceAtMost(8) }) { Text("+") }
                 }
                 if (session.sessionType == "compsim") OutlinedTextField(value = target, onValueChange = { target = it.filter { c -> c.isDigit() || c == '.' } }, label = { Text("Target time (seconds)") }, singleLine = true)
+                else if (session.sessionType != "timerOnly") OutlinedTextField(value = target, onValueChange = { target = it.filter { c -> c.isDigit() || c == '.' } }, label = { Text("Average goal (seconds, optional)") }, singleLine = true)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Pin session", modifier = Modifier.weight(1f))
                     Switch(checked = pinned, onCheckedChange = { pinned = it })
@@ -483,7 +510,7 @@ private fun SessionEditDialog(session: SessionEntity, onDismiss: () -> Unit, onS
 
 @Composable
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<SolveEntity>, scramble: String, scrambleSvg: String?, scrambleLocked: Boolean, running: Boolean, inspecting: Boolean, preparing: Boolean, elapsed: Long, inspectionElapsed: Long, inspectionCountdown: Boolean, phaseSplits: List<Long>, holdTime: Long, hapticsEnabled: Boolean, showStats: Boolean, showScrambleDrawing: Boolean, decimalPlaces: Int, boldTimerDigits: Boolean, error: String?, onShowSessions: () -> Unit) {
+private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<SolveEntity>, scramble: String, scrambleSvg: String?, scrambleLocked: Boolean, running: Boolean, inspecting: Boolean, preparing: Boolean, elapsed: Long, inspectionElapsed: Long, inspectionCountdown: Boolean, phaseSplits: List<Long>, holdTime: Long, hapticsEnabled: Boolean, showStats: Boolean, showScrambleDrawing: Boolean, decimalPlaces: Int, boldTimerDigits: Boolean, timerSizeScale: Float, scrambleTextSize: Int, timerFontPreset: String, error: String?, onShowSessions: () -> Unit) {
     var showScramble by remember { mutableStateOf(false) }
     var showScrambleMenu by remember { mutableStateOf(false) }
     var showEventPicker by remember { mutableStateOf(false) }
@@ -512,10 +539,15 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
                 }.padding(horizontal = 9.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                EventIcon(session?.eventId ?: "333", 35)
-                Spacer(Modifier.width(8.dp))
-                Text(session?.name ?: "Loading session…", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium, maxLines = 1)
+                EventIcon(session?.eventId ?: "333", 34)
+                Spacer(Modifier.width(9.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(session?.name ?: "Loading session…", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text("${CubeEvents.fromId(session?.eventId ?: "333").name} · ${solves.size} solves${session?.targetMillis?.takeIf { session.sessionType != "compsim" }?.let { " · Ao5 goal ${formatMillis(it)}" }.orEmpty()}",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
             }
+            if (!scrambleLocked && !running) IconButton(onClick = { vm.nextScramble() }) { Icon(Icons.Filled.Refresh, contentDescription = "Next scramble", tint = MaterialTheme.colorScheme.primary) }
             if (scrambleLocked) IconButton(onClick = { vm.toggleScrambleLock() }, enabled = !running) { Icon(Icons.Filled.Lock, contentDescription = "Unlock scramble", tint = MaterialTheme.colorScheme.primary) }
         }
         Box(Modifier.fillMaxWidth().weight(if (compactLayout) 0.28f else 0.4f), contentAlignment = Alignment.Center) {
@@ -531,7 +563,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
                             Text("TAP TO EXPAND", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .8f))
                         }
                         Spacer(Modifier.height(7.dp))
-                        Text(displayedScramble, fontFamily = FontFamily(Font(R.font.recursive)), fontSize = if (compactLayout) 15.sp else 17.sp, lineHeight = if (compactLayout) 20.sp else 23.sp, maxLines = 5)
+                        Text(displayedScramble, fontFamily = FontFamily(Font(R.font.recursive)), fontSize = scrambleTextSize.sp, lineHeight = (scrambleTextSize * 1.32f).sp, maxLines = 5)
                     }
                 }
                 DropdownMenu(expanded = showScrambleMenu, onDismissRequest = { showScrambleMenu = false }) {
@@ -638,7 +670,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
             }
         }, contentAlignment = Alignment.Center) {
             val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
-            val timerSize = (maxWidth.value * 0.19f / fontScale).coerceIn(38f, 64f).sp
+            val timerSize = (maxWidth.value * 0.19f / fontScale * timerSizeScale).coerceIn(34f, 76f).sp
             val timerScale by androidx.compose.animation.core.animateFloatAsState(if (preparing) 1.055f else if (running) .985f else 1f, animationSpec = androidx.compose.animation.core.spring(dampingRatio = .68f, stiffness = 320f), label = "timer-scale")
             if (running || preparing || inspecting) {
                 val phase = if (inspecting) (inspectionElapsed / 15_000_000_000f).coerceIn(0f, 1f) else ((elapsed / 1_000_000L) % 10_000L) / 10_000f
@@ -651,7 +683,7 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
                 }
             }
             Row(Modifier.graphicsLayer { scaleX = timerScale; scaleY = timerScale }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                Text(timeText, fontFamily = FontFamily(Font(R.font.recursive)), fontSize = timerSize, fontWeight = if (boldTimerDigits) FontWeight.Bold else FontWeight.Medium, color = animatedTimerColor, maxLines = 1, softWrap = false)
+                Text(timeText, fontFamily = if (timerFontPreset == "system") FontFamily.Default else FontFamily(Font(R.font.recursive)), fontSize = timerSize, fontWeight = if (boldTimerDigits) FontWeight.Bold else FontWeight.Medium, color = animatedTimerColor, maxLines = 1, softWrap = false)
                 if (inspecting && inspectionElapsed >= 15_000_000_000L) {
                     Text(if (inspectionElapsed >= 17_000_000_000L) " [DNF]" else " [+2]", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = timerColor)
                 }
@@ -960,7 +992,13 @@ private fun SolveDetailDialog(solve: SolveEntity, vm: TimerViewModel, onDismiss:
 
 @Composable
 private fun StatsPage(solves: List<SolveEntity>, session: SessionEntity? = null, staticGradient: Boolean = true, graphGlow: Boolean = true, graphAnimation: Boolean = true, cardMotion: Boolean = true, onChooseSession: () -> Unit = {}) {
-    val results = solves.reversed().map { solve ->
+    var rangeDays by remember(session?.id) { mutableIntStateOf(0) }
+    val now = System.currentTimeMillis()
+    val windowMillis = rangeDays * 24L * 60L * 60L * 1000L
+    val currentStart = if (rangeDays == 0) Long.MIN_VALUE else now - windowMillis
+    val scopedSolves = if (rangeDays == 0) solves else solves.filter { it.createdAt >= currentStart }
+    val previousSolves = if (rangeDays == 0) emptyList() else solves.filter { it.createdAt >= currentStart - windowMillis && it.createdAt < currentStart }
+    val results = scopedSolves.reversed().map { solve ->
         TimedResult(solve.timeMillis, when (solve.penalty) { Penalty.PLUS_TWO.ordinal -> Penalty.PLUS_TWO; Penalty.DNF.ordinal -> Penalty.DNF; else -> Penalty.NONE })
     }
     val best = Statistics.bestSingle(results)
@@ -988,6 +1026,31 @@ private fun StatsPage(solves: List<SolveEntity>, session: SessionEntity? = null,
             Text(session?.name ?: "Default Session", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             Text("⌄", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(0 to "All time", 30 to "30 days", 7 to "7 days").forEach { (days, label) ->
+                FilterChip(selected = rangeDays == days, onClick = { rangeDays = days }, label = { Text(label) })
+            }
+        }
+        if (rangeDays > 0) {
+            fun periodMean(items: List<SolveEntity>): Long? = items.map { solve ->
+                when (solve.penalty) { Penalty.PLUS_TWO.ordinal -> solve.timeMillis + 2_000; Penalty.DNF.ordinal -> Long.MAX_VALUE; else -> solve.timeMillis }
+            }.filter { it != Long.MAX_VALUE }.takeIf { it.isNotEmpty() }?.average()?.toLong()
+            val priorMean = periodMean(previousSolves)
+            val recentMean = periodMean(scopedSolves)
+            val comparison = when {
+                recentMean == null || priorMean == null -> "Not enough solves in both periods yet"
+                recentMean <= priorMean -> "${formatMillis(priorMean - recentMean)} faster than the previous ${rangeDays} days"
+                else -> "${formatMillis(recentMean - priorMean)} slower than the previous ${rangeDays} days"
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(18.dp)).padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("PERIOD COMPARISON", style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Text(comparison, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 3.dp))
+                }
+                Text("${scopedSolves.size} solves", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (session?.sessionType != "compsim") AverageGoalCard(session?.targetMillis, ao5)
         if (session?.sessionType == "compsim" && session.targetMillis != null) {
             val progress = Statistics.compSimProgress(results, session.targetMillis)
             val complete = progress.groups.filter { it.average != null }
@@ -999,14 +1062,14 @@ private fun StatsPage(solves: List<SolveEntity>, session: SessionEntity? = null,
                 StatsCard("TARGET", formatMillis(session.targetMillis), Modifier.weight(1f), motionEnabled = cardMotion)
                 StatsCard("REACHED", complete.count { it.average?.let { avg -> !avg.isDnf && (avg.millis ?: Double.POSITIVE_INFINITY) <= session.targetMillis } == true }.toString(), Modifier.weight(1f), motionEnabled = cardMotion)
             }
-            StatsTrendChart(solves, graphGlow, graphAnimation)
-            StatsDistributionChart(solves, graphAnimation)
+            StatsTrendChart(scopedSolves, graphGlow, graphAnimation)
+            StatsDistributionChart(scopedSolves, graphAnimation)
             return@Column
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatsCard("CURRENT STATS", listOf("AO5" to formatAverage(ao5), "AO12" to formatAverage(ao12), "AO100" to formatAverage(ao100)), Modifier.weight(1f), height = 164, motionEnabled = cardMotion)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatsCard("SOLVE COUNT", solves.size.toString(), Modifier.fillMaxWidth(), height = 77, motionEnabled = cardMotion)
+                StatsCard("SOLVE COUNT", scopedSolves.size.toString(), Modifier.fillMaxWidth(), height = 77, motionEnabled = cardMotion)
                 StatsCard("SESSION MEAN", mean?.let(::formatMillis) ?: "—", Modifier.fillMaxWidth(), height = 77, motionEnabled = cardMotion)
             }
         }
@@ -1024,8 +1087,29 @@ private fun StatsPage(solves: List<SolveEntity>, session: SessionEntity? = null,
                     if (Statistics.average(bestWindow)?.trimmed?.contains(i) == true) "($text)" else text
                 }.orEmpty(), motionEnabled = cardMotion)
         }
-        StatsTrendChart(solves, graphGlow, graphAnimation)
-        StatsDistributionChart(solves, graphAnimation)
+        StatsTrendChart(scopedSolves, graphGlow, graphAnimation)
+        StatsDistributionChart(scopedSolves, graphAnimation)
+    }
+}
+
+@Composable
+private fun AverageGoalCard(targetMillis: Long?, average: app.trampis.timed.domain.Average?) {
+    if (targetMillis == null) return
+    val target = targetMillis.toDouble()
+    val current = average?.takeUnless { it.isDnf }?.millis
+    val progress = current?.let { (target / it.coerceAtLeast(1.0)).toFloat().coerceIn(0f, 1f) } ?: 0f
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .76f), RoundedCornerShape(18.dp)).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("SESSION AVERAGE GOAL", style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            Text(if (current == null) "${formatMillis(targetMillis)} · Complete an Ao5 to track progress" else {
+                val currentText = formatMillis(current.toLong())
+                if (current <= target) "$currentText · Goal reached" else "$currentText · ${formatMillis((current - target).toLong())} to goal"
+            }, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 3.dp))
+            androidx.compose.animation.AnimatedVisibility(visible = current != null, enter = fadeIn() + androidx.compose.animation.expandVertically()) {
+                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(5.dp), trackColor = MaterialTheme.colorScheme.surface, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+        Text("Ao5 ≤ ${formatMillis(targetMillis)}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp))
     }
 }
 
@@ -1448,7 +1532,7 @@ private fun MorePage(inspectionEnabled: Boolean, inspectionCountdown: Boolean, h
 }
 
 @Composable
-private fun AppearancePage(override: Boolean, dark: Boolean, staticGradient: Boolean, graphGlow: Boolean, graphAnimation: Boolean, confetti: Boolean, boldTimerDigits: Boolean, statsCardMotion: Boolean, vm: TimerViewModel, onBack: () -> Unit) {
+private fun AppearancePage(override: Boolean, dark: Boolean, staticGradient: Boolean, graphGlow: Boolean, graphAnimation: Boolean, confetti: Boolean, boldTimerDigits: Boolean, statsCardMotion: Boolean, timerSizeScale: Float, scrambleTextSize: Int, timerFontPreset: String, vm: TimerViewModel, onBack: () -> Unit) {
     var showReset by remember { mutableStateOf(false) }
     val currentAccent by vm.accentPreset.collectAsState()
     Column(Modifier.fillMaxSize()) {
@@ -1493,9 +1577,18 @@ private fun AppearancePage(override: Boolean, dark: Boolean, staticGradient: Boo
             }
             SettingGroup("Timer Typography") {
                 SettingSwitch("Bold Timer Digits", "Use a stronger, clearer weight for the main timer.", boldTimerDigits, vm::setBoldTimerDigits)
-                Text("00.000", fontFamily = FontFamily(Font(R.font.recursive)), fontSize = 34.sp,
+                Text("Timer Typeface", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 14.dp, top = 8.dp))
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = timerFontPreset == "recursive", onClick = { vm.setTimerFontPreset("recursive") }, label = { Text("Digital") })
+                    FilterChip(selected = timerFontPreset == "system", onClick = { vm.setTimerFontPreset("system") }, label = { Text("System") })
+                }
+                Text("00.000", fontFamily = if (timerFontPreset == "system") FontFamily.Default else FontFamily(Font(R.font.recursive)), fontSize = 34.sp,
                     fontWeight = if (boldTimerDigits) FontWeight.Bold else FontWeight.Medium, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 12.dp))
+                Text("Timer Size · ${(timerSizeScale * 100).roundToInt()}%", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 14.dp))
+                Slider(value = timerSizeScale, onValueChange = vm::setTimerSizeScale, valueRange = .85f..1.2f, steps = 6, modifier = Modifier.padding(horizontal = 12.dp))
+                Text("Scramble Size · ${scrambleTextSize}sp", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 14.dp))
+                Slider(value = scrambleTextSize.toFloat(), onValueChange = { vm.setScrambleTextSize(it.roundToInt()) }, valueRange = 14f..23f, steps = 8, modifier = Modifier.padding(horizontal = 12.dp))
             }
             OutlinedButton(onClick = { showReset = true }, modifier = Modifier.fillMaxWidth()) { Text("↻  Reset Appearance Settings", color = Color(0xFFE34F53)) }
             Spacer(Modifier.height(20.dp))
@@ -1526,7 +1619,7 @@ private fun SettingSwitch(title: String, description: String, checked: Boolean, 
 @Composable
 private fun SessionDialog(sessions: List<SessionEntity>, selected: SessionEntity?, onDismiss: () -> Unit, onSelect: (Long) -> Unit, onNew: () -> Unit) {
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Sessions") }, text = {
-        Column {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
             sessions.forEach { session -> TextButton(onClick = { onSelect(session.id) }, modifier = Modifier.fillMaxWidth()) { Text((if (session.id == selected?.id) "✓  " else "") + session.name) } }
         }
     }, confirmButton = { TextButton(onClick = onNew) { Text("New session") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Done") } })
@@ -1545,7 +1638,7 @@ private fun NewSessionDialog(onDismiss: () -> Unit, onCreate: (String, String, S
     val sessionTypes = listOf("standard" to "Standard Session", "multiphase" to "Multiphase", "playground" to "Playground", "compsim" to "Competition Simulation", "timerOnly" to "Timer Only", "algtrainer" to "Algorithm Trainer")
     val selectedType = sessionTypes.first { it.first == sessionType }.second
     val targetMillis = targetText.toDoubleOrNull()?.let { (it * 1000).toLong() }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("New $selectedType Session") }, text = {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (sessionType == "standard") "New Session" else "New $selectedType") }, text = {
         Column {
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Session name") }, singleLine = true)
             Box {
@@ -1568,6 +1661,7 @@ private fun NewSessionDialog(onDismiss: () -> Unit, onCreate: (String, String, S
                 TextButton(onClick = { phaseCount = (phaseCount + 1).coerceAtMost(8) }) { Text("+") }
             }
             if (sessionType == "compsim") OutlinedTextField(value = targetText, onValueChange = { targetText = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Target time (seconds)") }, singleLine = true)
+            else if (sessionType != "timerOnly") OutlinedTextField(value = targetText, onValueChange = { targetText = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Average goal (seconds, optional)") }, singleLine = true)
             if (sessionType != "timerOnly") {
                 Box {
                     TextButton(onClick = { expanded = true }) { Text("Event: ${event.name}  ▾") }
