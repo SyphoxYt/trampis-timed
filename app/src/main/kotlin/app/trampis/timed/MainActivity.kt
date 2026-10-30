@@ -133,8 +133,8 @@ private fun TrampisTheme(dark: Boolean, content: @Composable () -> Unit) {
     val accent = Color(0xFF5179F6)
     val colors = if (dark) darkColorScheme(
         primary = Color(0xFF4D74F5), onPrimary = Color.White,
-        background = Color(0xFF000000), surface = Color(0xFF1E1F21), onSurface = Color(0xFFF7F7F7),
-        surfaceVariant = Color(0xFF303032), onSurfaceVariant = Color(0xFFCAC8C6),
+        background = Color(0xFF080A12), surface = Color(0xFF151926), onSurface = Color(0xFFF7F8FF),
+        surfaceVariant = Color(0xFF202638), onSurfaceVariant = Color(0xFFADB5C9),
     ) else lightColorScheme(
         primary = accent, onPrimary = Color.White,
         background = Color(0xFFF0F2FA), surface = Color.White, onSurface = Color(0xFF17181A),
@@ -181,37 +181,42 @@ private fun BrandedLoadingScreen() {
         ), label = "logo-pulse",
     )
     val rotation by transition.animateFloat(
-        initialValue = -1f, targetValue = 1f,
+        initialValue = -4f, targetValue = 4f,
         animationSpec = androidx.compose.animation.core.infiniteRepeatable(
             animation = androidx.compose.animation.core.tween(1800, easing = androidx.compose.animation.core.FastOutSlowInEasing),
             repeatMode = androidx.compose.animation.core.RepeatMode.Reverse,
         ), label = "logo-tilt",
     )
+    val orbit by transition.animateFloat(0f, 360f, animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+        androidx.compose.animation.core.tween(9000, easing = androidx.compose.animation.core.LinearEasing)), label = "orbit")
+    val reveal by androidx.compose.animation.core.animateFloatAsState(1f, androidx.compose.animation.core.tween(900, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "loader-reveal")
     BoxWithConstraints(
-        Modifier.fillMaxSize().background(Color(0xFF1A1A1A)),
+        Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF11182B), Color(0xFF080A12), Color(0xFF090B14)))),
         contentAlignment = Alignment.Center,
     ) {
-        val logoSize = (maxWidth * .56f).coerceIn(150.dp, 224.dp)
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Image(
-                painter = painterResource(R.mipmap.ic_launcher),
-                contentDescription = "Trampis Timed logo",
-                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                modifier = Modifier.size(logoSize).graphicsLayer { scaleX = pulse; scaleY = pulse; rotationZ = rotation },
-            )
-            Spacer(Modifier.height(26.dp))
-            Text("TRAMPIS TIMED", color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 3.sp)
-            Text("CUBE TIMER", color = Color(0xFFAEB1BC), style = MaterialTheme.typography.labelSmall, letterSpacing = 2.2.sp, modifier = Modifier.padding(top = 7.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(top = 34.dp)) {
+        val logoSize = (maxWidth * .49f).coerceIn(138.dp, 204.dp)
+        Canvas(Modifier.fillMaxSize()) {
+            val radius = size.minDimension * .38f
+            drawCircle(Color(0xFF496BFF).copy(alpha = .13f), radius = radius, center = Offset(size.width / 2, size.height * .43f))
+            drawCircle(Color(0xFF6E8FFF).copy(alpha = .25f), radius = radius * .72f, center = Offset(size.width / 2, size.height * .43f), style = Stroke(width = 1.dp.toPx()))
+            val angle = Math.toRadians(orbit.toDouble())
+            drawCircle(Color(0xFF9BB3FF), radius = 3.5.dp.toPx(), center = Offset(size.width / 2 + kotlin.math.cos(angle).toFloat() * radius * .72f, size.height * .43f + kotlin.math.sin(angle).toFloat() * radius * .72f))
+        }
+        Column(Modifier.fillMaxWidth().graphicsLayer { alpha = reveal; translationY = (1 - reveal) * 28.dp.toPx() }, horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(logoSize + 32.dp), contentAlignment = Alignment.Center) {
+                Canvas(Modifier.fillMaxSize()) { drawCircle(Color(0xFF5278FF).copy(alpha = .14f), size.minDimension * .48f) }
+                Image(painterResource(R.drawable.splash_logo), "Trampis Timed logo", contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                    modifier = Modifier.size(logoSize).graphicsLayer { scaleX = pulse; scaleY = pulse; rotationZ = rotation })
+            }
+            Spacer(Modifier.height(22.dp))
+            Text("TRAMPIS TIMED", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.4.sp)
+            Text("READY. SET. SOLVE.", color = Color(0xFFAAB7D8), style = MaterialTheme.typography.labelMedium, letterSpacing = 2.5.sp, modifier = Modifier.padding(top = 9.dp))
+            Spacer(Modifier.height(42.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 repeat(3) { index ->
-                    val alpha by transition.animateFloat(
-                        initialValue = .26f, targetValue = 1f,
-                        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                            animation = androidx.compose.animation.core.tween(700, delayMillis = index * 180),
-                            repeatMode = androidx.compose.animation.core.RepeatMode.Restart,
-                        ), label = "loading-dot-$index",
-                    )
-                    Box(Modifier.size(7.dp).background(Color(0xFF6B8EFF).copy(alpha = alpha), RoundedCornerShape(50)))
+                    val alpha by transition.animateFloat(.3f, 1f, animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                        androidx.compose.animation.core.tween(620, delayMillis = index * 170), androidx.compose.animation.core.RepeatMode.Reverse), label = "loading-dot-$index")
+                    Box(Modifier.size(if (index == 1) 7.dp else 5.dp).background(Color(0xFF8EAAFF).copy(alpha = alpha), RoundedCornerShape(50)))
                 }
             }
         }
@@ -339,9 +344,9 @@ private fun CubeTabBar(selected: String, onSelect: (String) -> Unit) {
         "Settings" to (Icons.Outlined.Settings to Icons.Filled.Settings),
     )
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-            .background(if (selected == "Timer") MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
-            .height(50.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = .98f), RoundedCornerShape(24.dp))
+            .height(64.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -352,10 +357,16 @@ private fun CubeTabBar(selected: String, onSelect: (String) -> Unit) {
                 animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.72f, stiffness = 438f),
                 label = "tab-icon-$label",
             )
-            IconButton(onClick = { onSelect(label) }, modifier = Modifier.weight(1f).fillMaxHeight()) {
+            val pill by androidx.compose.animation.animateColorAsState(if (active) MaterialTheme.colorScheme.primary.copy(alpha = .18f) else Color.Transparent, androidx.compose.animation.core.tween(220), label = "tab-pill-$label")
+            Column(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 3.dp, vertical = 5.dp)
+                .background(pill, RoundedCornerShape(18.dp)).clickable { onSelect(label) },
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Icon(if (active) icons.second else icons.first, contentDescription = label,
                     tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(if (label == "Solves") 25.dp else 24.dp).graphicsLayer { scaleX = scale; scaleY = scale })
+                    modifier = Modifier.size(22.dp).graphicsLayer { scaleX = scale; scaleY = scale })
+                androidx.compose.animation.AnimatedVisibility(active, enter = fadeIn() + androidx.compose.animation.expandVertically(), exit = fadeOut() + androidx.compose.animation.shrinkVertically()) {
+                    Text(label, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                }
             }
         }
     }
@@ -479,12 +490,17 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
     var spaceHoldJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val screenConfiguration = LocalConfiguration.current
     val compactLayout = screenConfiguration.screenHeightDp < 700 || screenConfiguration.fontScale > 1.25f
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    val ambient = androidx.compose.animation.core.rememberInfiniteTransition(label = "timer-ambient")
+    val ambientAlpha by ambient.animateFloat(.04f, .12f, androidx.compose.animation.core.infiniteRepeatable(
+        androidx.compose.animation.core.tween(2200, easing = androidx.compose.animation.core.FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "ambient-glow")
+    Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(
+        MaterialTheme.colorScheme.primary.copy(alpha = ambientAlpha), MaterialTheme.colorScheme.background, MaterialTheme.colorScheme.background,
+    ))).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(Modifier.fillMaxWidth().heightIn(min = 54.dp), verticalAlignment = Alignment.CenterVertically) {
             Row(
-                Modifier.weight(1f).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(6.dp)).clickable {
+                Modifier.weight(1f).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(18.dp)).clickable {
                     if (session?.sessionType == "playground") showEventPicker = true else onShowSessions()
-                }.padding(horizontal = 5.dp, vertical = 4.dp),
+                }.padding(horizontal = 9.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 EventIcon(session?.eventId ?: "333", 35)
@@ -499,8 +515,15 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
                     (fadeIn(androidx.compose.animation.core.tween(180)) + androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(220)) { it / 8 }) togetherWith
                         (fadeOut(androidx.compose.animation.core.tween(140)) + androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(180)) { -it / 8 })
                 }, label = "scramble-transition") { displayedScramble ->
-                    Text(displayedScramble, fontFamily = FontFamily(Font(R.font.recursive)), fontSize = if (compactLayout) 16.sp else 18.sp, lineHeight = if (compactLayout) 20.sp else 22.sp,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).combinedClickable(onClick = { showScramble = true }, onLongClick = { showScrambleMenu = true }), maxLines = 5)
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 3.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = .76f), RoundedCornerShape(20.dp))
+                        .combinedClickable(onClick = { showScramble = true }, onLongClick = { showScrambleMenu = true }).padding(horizontal = 16.dp, vertical = 13.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("SCRAMBLE", style = MaterialTheme.typography.labelSmall, letterSpacing = 1.7.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            Text("TAP TO EXPAND", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .8f))
+                        }
+                        Spacer(Modifier.height(7.dp))
+                        Text(displayedScramble, fontFamily = FontFamily(Font(R.font.recursive)), fontSize = if (compactLayout) 15.sp else 17.sp, lineHeight = if (compactLayout) 20.sp else 23.sp, maxLines = 5)
+                    }
                 }
                 DropdownMenu(expanded = showScrambleMenu, onDismissRequest = { showScrambleMenu = false }) {
                     DropdownMenuItem(text = { Text("Copy Scramble") }, onClick = { clipboard.setText(AnnotatedString(scramble)); showScrambleMenu = false })
@@ -608,6 +631,16 @@ private fun TimerPage(vm: TimerViewModel, session: SessionEntity?, solves: List<
             val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
             val timerSize = (maxWidth.value * 0.19f / fontScale).coerceIn(38f, 64f).sp
             val timerScale by androidx.compose.animation.core.animateFloatAsState(if (preparing) 1.055f else if (running) .985f else 1f, animationSpec = androidx.compose.animation.core.spring(dampingRatio = .68f, stiffness = 320f), label = "timer-scale")
+            if (running || preparing || inspecting) {
+                val phase = if (inspecting) (inspectionElapsed / 15_000_000_000f).coerceIn(0f, 1f) else ((elapsed / 1_000_000L) % 10_000L) / 10_000f
+                Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = if (preparing) .75f else .5f }) {
+                    val diameter = size.minDimension * .88f
+                    val topLeft = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
+                    val ring = if (preparing) Color(0xFF77E5A6) else animatedTimerColor
+                    drawCircle(ring.copy(alpha = .10f), radius = diameter * .52f, center = Offset(size.width / 2, size.height / 2), style = Stroke(width = 14.dp.toPx()))
+                    drawArc(ring.copy(alpha = .24f), -90f, 360f * phase.coerceAtLeast(if (preparing) .15f else .01f), false, topLeft, androidx.compose.ui.geometry.Size(diameter, diameter), style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
+                }
+            }
             Row(Modifier.graphicsLayer { scaleX = timerScale; scaleY = timerScale }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 Text(timeText, fontFamily = FontFamily(Font(R.font.recursive)), fontSize = timerSize, fontWeight = FontWeight.Light, color = animatedTimerColor, maxLines = 1, softWrap = false)
                 if (inspecting && inspectionElapsed >= 15_000_000_000L) {
@@ -691,6 +724,7 @@ private fun ScrambleDrawing(svg: String?, eventId: String, modifier: Modifier = 
 
 @Composable
 private fun TimerStatsPanel(solvesDescending: List<SolveEntity>, session: SessionEntity? = null) {
+    val compactStats = LocalConfiguration.current.screenWidthDp < 380 || LocalDensity.current.fontScale > 1.25f
     val results = solvesDescending.reversed().map { solve ->
         TimedResult(solve.timeMillis, when (solve.penalty) { Penalty.PLUS_TWO.ordinal -> Penalty.PLUS_TWO; Penalty.DNF.ordinal -> Penalty.DNF; else -> Penalty.NONE })
     }
@@ -709,17 +743,25 @@ private fun TimerStatsPanel(solvesDescending: List<SolveEntity>, session: Sessio
             progress.neededForTargetMillis?.let { formatMillis(it.toLong()) } != null -> progress.neededForTargetMillis?.let { formatMillis(it.toLong()) }
             else -> "—"
         }
-        Column(Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 6.dp), verticalArrangement = Arrangement.SpaceEvenly) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { MiniStat("BPA", bpa); MiniStat("WPA", wpa) }
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
-            MiniStat("TO REACH TARGET · ${formatMillis(session.targetMillis)}", target)
+        Column(Modifier.fillMaxSize().padding(horizontal = 7.dp, vertical = 4.dp), verticalArrangement = Arrangement.SpaceEvenly) {
+            if (compactStats) {
+                MiniStatLine("BPA", bpa); MiniStatLine("WPA", wpa); MiniStatLine("TARGET", target)
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { MiniStat("BPA", bpa); MiniStat("WPA", wpa) }
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+                MiniStat("TO REACH TARGET · ${formatMillis(session.targetMillis)}", target)
+            }
         }
         return
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 6.dp), verticalArrangement = Arrangement.SpaceEvenly) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { MiniStat("AO5", ao5); MiniStat("AO12", ao12) }
-        HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { MiniStat("AO100", ao100); MiniStat("MEAN", mean) }
+    Column(Modifier.fillMaxSize().padding(horizontal = 7.dp, vertical = 4.dp), verticalArrangement = Arrangement.SpaceEvenly) {
+        if (compactStats) {
+            MiniStatLine("AO5", ao5); MiniStatLine("AO12", ao12); MiniStatLine("AO100", ao100); MiniStatLine("MEAN", mean)
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { MiniStat("AO5", ao5); MiniStat("AO12", ao12) }
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { MiniStat("AO100", ao100); MiniStat("MEAN", mean) }
+        }
     }
 }
 
@@ -728,6 +770,15 @@ private fun MiniStat(label: String, value: String?) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium)
         Text(value ?: "-", fontFamily = FontFamily(Font(R.font.recursive)), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = if (value == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+@Composable
+private fun MiniStatLine(label: String, value: String?) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        Text(value ?: "—", fontFamily = FontFamily(Font(R.font.recursive)), fontSize = 14.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold,
+            color = if (value == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface, maxLines = 1, softWrap = false)
     }
 }
 
@@ -914,7 +965,9 @@ private fun StatsPage(solves: List<SolveEntity>, session: SessionEntity? = null,
     val bestAo5 = Statistics.bestAverage(results, 5)
     val bestAo12 = Statistics.bestAverage(results, 12)
     val bestAo100 = Statistics.bestAverage(results, 100)
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 24.dp)) {
+    Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(
+        MaterialTheme.colorScheme.primary.copy(alpha = .09f), MaterialTheme.colorScheme.background, MaterialTheme.colorScheme.background,
+    ))).verticalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 24.dp)) {
         Text("Stats", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
@@ -977,13 +1030,18 @@ private fun formatAverage(average: app.trampis.timed.domain.Average?): String = 
 @Composable
 private fun StatsCard(title: String, values: List<Pair<String, String>>, modifier: Modifier = Modifier, height: Int = 140) {
     val scale = LocalDensity.current.fontScale.coerceIn(1f, 1.45f)
-    Column(modifier.height((height * scale).dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 10.dp)) {
+    val cardShape = RoundedCornerShape(22.dp)
+    Column(modifier.height((height * scale).dp).background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .76f), MaterialTheme.colorScheme.surface,
+    )), cardShape).padding(horizontal = 15.dp, vertical = 12.dp)) {
         Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         Spacer(Modifier.height(7.dp))
         values.forEach { (label, value) ->
             Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center) {
                 Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(value, style = MaterialTheme.typography.titleLarge, fontFamily = FontFamily(Font(R.font.recursive)), fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                AnimatedContent(value, transitionSpec = { fadeIn(androidx.compose.animation.core.tween(180)) + androidx.compose.animation.slideInVertically { it / 3 } togetherWith fadeOut(androidx.compose.animation.core.tween(100)) }, label = "stat-value") { shown ->
+                    Text(shown, style = MaterialTheme.typography.titleLarge, fontFamily = FontFamily(Font(R.font.recursive)), fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                }
             }
         }
     }
@@ -991,16 +1049,18 @@ private fun StatsCard(title: String, values: List<Pair<String, String>>, modifie
 
 @Composable
 private fun StatsCard(title: String, value: String, modifier: Modifier = Modifier, height: Int = 88, accent: Boolean = false, details: List<String> = emptyList(), dynamic: Boolean = false) {
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(22.dp)
     val color = MaterialTheme.colorScheme.surface
     val scale = LocalDensity.current.fontScale.coerceIn(1f, 1.45f)
     val gradientColors = if (dynamic) listOf(Color(0xFF27C4B8), Color(0xFFB6D944), Color(0xFFFFB52E), Color(0xFFE84F82), Color(0xFF7158E8)) else listOf(Color(0xFF83A6FF), Color(0xFF4169E1))
-    Column((if (accent) modifier.background(androidx.compose.ui.graphics.Brush.linearGradient(gradientColors), shape) else modifier.background(color, shape)).height((height * scale).dp)
+    Column((if (accent) modifier.background(androidx.compose.ui.graphics.Brush.linearGradient(gradientColors), shape) else modifier.background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .76f), color)), shape)).height((height * scale).dp)
         .padding(horizontal = 14.dp, vertical = 10.dp)) {
         Text(title, style = MaterialTheme.typography.labelLarge, color = if (accent) Color.White.copy(alpha = .85f) else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         if (details.isEmpty()) {
-            Text(value, style = MaterialTheme.typography.headlineMedium, fontFamily = FontFamily(Font(R.font.recursive)), fontWeight = FontWeight.Bold,
-                color = if (accent) Color.White else MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f).wrapContentHeight(Alignment.Bottom), maxLines = 1, softWrap = false)
+            AnimatedContent(value, transitionSpec = { fadeIn(androidx.compose.animation.core.tween(180)) + androidx.compose.animation.slideInVertically { it / 3 } togetherWith fadeOut(androidx.compose.animation.core.tween(100)) }, label = "stat-card-value") { shown ->
+                Text(shown, style = MaterialTheme.typography.headlineMedium, fontFamily = FontFamily(Font(R.font.recursive)), fontWeight = FontWeight.Bold,
+                    color = if (accent) Color.White else MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f).wrapContentHeight(Alignment.Bottom), maxLines = 1, softWrap = false)
+            }
         } else {
             Text(value, style = MaterialTheme.typography.headlineMedium, fontFamily = FontFamily(Font(R.font.recursive)), fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false)
